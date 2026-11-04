@@ -225,7 +225,7 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "DSH Mobile",
+                text = profileLabel ?: "DSH Mobile",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier
                     .weight(1f)
