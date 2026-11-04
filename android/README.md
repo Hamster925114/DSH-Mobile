@@ -55,7 +55,7 @@ APK 输出：`app\build\outputs\apk\debug\app-debug.apk`。
 
 1. 打开 DSH Mobile。
 2. 在“连接方式”里选局域网 / Tailscale / frp + VPS；也可以点“连接管理”先编辑地址。
-3. 点“扫码”，扫桌面配对页对应连接的二维码；或手动填地址 + 配对码。
+3. 点“扫码”，扫桌面配对页对应连接的二维码；二维码会带连接类型，自动选中局域网 / Tailscale / frp 槽位。也可以手动填地址 + 配对码。
 4. 点“连接”。
 
 App 会：
@@ -74,7 +74,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 
 ### 2.3 地址格式
 
-- 必须带 `http://` 或 `https://`。
+- 可以省略 `http://` / `https://`：局域网和自定义连接默认补 `http://`，Tailscale 和 frp 默认补 `https://`；带 scheme 时以输入为准。
 - 可以带路径前缀（反代把 DSH 挂在子路径时），例如 `https://example.com/dsh`。
 - 不能带 query / fragment。
 - 配对码一次性，默认 120 秒；过期后桌面页刷新会生成新码。

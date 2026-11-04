@@ -10,8 +10,11 @@ import java.net.URLDecoder
  * QR / deep-link payload for pairing.
  *
  * Supported forms:
- * - `{"v":1,"base":"https://...","code":"ABCD..."}`
- * - `dshmobile://pair?base=https%3A%2F%2F...&code=ABCD...`
+ * - `{"v":1,"base":"https://...","code":"ABCD...","kind":"lan"}`
+ * - `dshmobile://pair?base=https%3A%2F%2F...&code=ABCD...&kind=lan`
+ *
+ * `kind` is optional for backwards compatibility; when present it lets the
+ * pairing screen select the LAN/Tailscale/frp slot automatically.
  */
 data class PairingPayload(
     val baseUrl: String,
