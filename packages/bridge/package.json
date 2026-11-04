@@ -1,0 +1,21 @@
+{
+  "name": "@dsh-mobile/bridge",
+  "version": "0.0.1",
+  "private": true,
+  "description": "DSH Mobile pairing and health bridge for the DSH desktop profile",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "license": "MIT"
+}

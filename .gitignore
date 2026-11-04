@@ -1,0 +1,25 @@
+# Local research / extracted asar
+.ref/
+
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+
+# Android
+android/.gradle/
+android/local.properties
+android/.idea/
+android/**/build/
+*.apk
+*.aab
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local backups / logs
+*.bak-*
+*.log
