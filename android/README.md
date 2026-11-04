@@ -93,7 +93,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | 设置 | 当前连接、刷新会话数、重新加载、连接管理、清除配对 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
-| 测试 | `DshUrl`、`PairingPayload` 单元测试 |
+| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile` 单元测试 |
 
 ### 3.1 明确不做（M1）
 
