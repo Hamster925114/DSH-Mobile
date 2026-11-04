@@ -128,13 +128,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Choose which saved slot a manual pairing should fill. The pairing screen
      * calls this when the user taps a connection chip.
      */
-    fun selectProfileForPairing(id: String) {
+    fun selectProfileForPairing(id: String, baseUrlOverride: String? = null) {
         viewModelScope.launch {
             val settings = settingsRepository.settings.first()
             val profile = settings.profiles.firstOrNull { it.id == id } ?: return@launch
             settingsRepository.setActiveProfile(id)
             _state.value = AppState.NeedsPairing(
-                suggestedBaseUrl = profile.baseUrl,
+                suggestedBaseUrl = baseUrlOverride ?: profile.baseUrl,
                 profileId = profile.id,
                 profileLabel = profile.label,
             )

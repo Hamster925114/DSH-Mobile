@@ -435,7 +435,8 @@ export async function apply(ctx, config = {}) {
       const cards = []
       for (const endpoint of endpointList) {
         const pairingUrl =
-          `dshmobile://pair?base=${encodeURIComponent(endpoint.url)}&code=${encodeURIComponent(code)}`
+          `dshmobile://pair?base=${encodeURIComponent(endpoint.url)}&code=${encodeURIComponent(code)}` +
+          `&kind=${encodeURIComponent(endpoint.kind)}`
         let qrSvg = ''
         try {
           qrSvg = await QRCode.toString(pairingUrl, {

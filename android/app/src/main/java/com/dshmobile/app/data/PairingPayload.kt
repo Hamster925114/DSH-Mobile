@@ -16,9 +16,17 @@ import java.net.URLDecoder
 data class PairingPayload(
     val baseUrl: String,
     val code: String,
+    val kind: ConnectionKind? = null,
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
+
+        private fun parseKind(raw: String?): ConnectionKind? {
+            if (raw.isNullOrBlank()) return null
+            return ConnectionKind.entries.firstOrNull {
+                it.name.equals(raw, ignoreCase = true)
+            }
+        }
 
         fun parse(raw: String): PairingPayload? {
             val text = raw.trim()
@@ -31,7 +39,15 @@ data class PairingPayload(
             val base = obj["base"]?.jsonPrimitive?.content
                 ?: obj["baseUrl"]?.jsonPrimitive?.content
             val code = obj["code"]?.jsonPrimitive?.content
-            if (base.isNullOrBlank() || code.isNullOrBlank()) null else PairingPayload(base, code)
+            if (base.isNullOrBlank() || code.isNullOrBlank()) {
+                null
+            } else {
+                PairingPayload(
+                    baseUrl = base,
+                    code = code,
+                    kind = parseKind(obj["kind"]?.jsonPrimitive?.content),
+                )
+            }
         }.getOrNull()
 
         private fun parseDeepLink(text: String): PairingPayload? = runCatching {
@@ -56,7 +72,11 @@ data class PairingPayload(
                 if (base.isNullOrBlank() || code.isNullOrBlank()) {
                     null
                 } else {
-                    PairingPayload(base, code)
+                    PairingPayload(
+                        baseUrl = base,
+                        code = code,
+                        kind = parseKind(params["kind"]),
+                    )
                 }
             }
         }.getOrNull()

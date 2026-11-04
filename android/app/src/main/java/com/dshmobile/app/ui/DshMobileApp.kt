@@ -49,7 +49,7 @@ fun DshMobileApp(viewModel: MainViewModel = viewModel()) {
                 initialBaseUrl = current.suggestedBaseUrl,
                 profileId = current.profileId,
                 profiles = profiles,
-                onSelectProfile = viewModel::selectProfileForPairing,
+                onSelectProfile = { id, baseUrl -> viewModel.selectProfileForPairing(id, baseUrl) },
                 onPair = viewModel::pair,
                 onManageConnections = { showConnections = true },
             )

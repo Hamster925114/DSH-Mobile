@@ -53,7 +53,7 @@ fun PairingScreen(
     initialBaseUrl: String,
     profileId: String?,
     profiles: List<ConnectionProfile>,
-    onSelectProfile: (String) -> Unit,
+    onSelectProfile: (id: String, baseUrlOverride: String?) -> Unit,
     onPair: (baseUrl: String, code: String) -> Unit,
     onManageConnections: () -> Unit,
 ) {
@@ -73,7 +73,15 @@ fun PairingScreen(
             code = payload.code
             scanError = null
             val matching = profiles.firstOrNull { it.baseUrl == payload.baseUrl }
-            if (matching != null && matching.id != profileId) onSelectProfile(matching.id)
+                ?: payload.kind?.let { kind ->
+                    profiles.firstOrNull { it.kind == kind && it.baseUrl.isBlank() }
+                        ?: profiles.firstOrNull { it.kind == kind }
+                }
+            if (matching != null) {
+                // Keep the scanned URL even when the slot already has another
+                // address; the user is explicitly replacing it.
+                onSelectProfile(matching.id, payload.baseUrl)
+            }
         }
     }
 
@@ -122,7 +130,7 @@ fun PairingScreen(
                 profiles.forEach { profile ->
                     FilterChip(
                         selected = profile.id == profileId,
-                        onClick = { onSelectProfile(profile.id) },
+                        onClick = { onSelectProfile(profile.id, null) },
                         label = { Text(profile.label) },
                         enabled = !busy,
                     )
