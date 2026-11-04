@@ -45,10 +45,13 @@ function normalizeBaseUrl(value) {
   try {
     url = new URL(value)
   } catch {
-    throw new Error(`dsh-mobile-bridge: publicUrl is not a valid URL: ${JSON.stringify(value)}`)
+    throw new Error(`dsh-mobile-bridge: base URL is not valid: ${JSON.stringify(value)}`)
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`dsh-mobile-bridge: publicUrl must be http(s), got ${url.protocol}`)
+    throw new Error(`dsh-mobile-bridge: base URL must be http(s), got ${url.protocol}`)
+  }
+  if (url.search !== '' || url.hash !== '') {
+    throw new Error('dsh-mobile-bridge: base URL must not contain a query or fragment')
   }
   return url.href.replace(/\/+$/, '')
 }
@@ -66,6 +69,29 @@ function resolveBaseUrl(webServer, configured) {
   const origin = typeof webServer.getOrigin === 'function' ? webServer.getOrigin() : undefined
   if (typeof origin === 'string' && origin !== '') return origin.replace(/\/+$/, '')
   return `${webServer.protocol ?? 'http:'}//127.0.0.1:${String(webServer.port)}`
+}
+
+/**
+ * Whether a host is a loopback literal. Used only for UI hints; the real
+ * Host/Origin fence lives in @deepseek-ai/dsh-client-connection.
+ * @param {string} host
+ * @returns {boolean}
+ */
+function isLoopbackHost(host) {
+  return host === 'localhost' || host === '::1' || /^127\./.test(host) || /^::ffff:127\./i.test(host)
+}
+
+/**
+ * Whether a base URL points at this machine only.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isLoopbackUrl(value) {
+  try {
+    return isLoopbackHost(new URL(value).hostname)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -182,7 +208,12 @@ function escapeHtml(value) {
 /**
  * Mount the bridge.
  * @param {object} ctx Cordis context carrying `webServer` and `connection`.
- * @param {{ publicUrl?: string, pairingTtlSeconds?: number, maxAttemptsPerMinute?: number }} [config]
+ * @param {{
+ *   publicUrl?: string,
+ *   endpoints?: Array<{ id?: string, label?: string, url: string, kind?: string }>,
+ *   pairingTtlSeconds?: number,
+ *   maxAttemptsPerMinute?: number,
+ * }} [config]
  */
 export async function apply(ctx, config = {}) {
   const webServer = ctx.webServer
@@ -220,6 +251,62 @@ export async function apply(ctx, config = {}) {
     }
   }
 
+  /** The origin of the listener itself, or undefined before listen(). */
+  function bindOrigin() {
+    try {
+      return webServer.getOrigin().replace(/\/+$/, '')
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Every phone-reachable base URL this profile knows about, in display order.
+   *
+   * `endpoints` is the explicit list for LAN / Tailscale / frp. `publicUrl` is
+   * kept as a one-entry legacy alias. When DSH binds a concrete LAN address we
+   * append that origin automatically, so a single LAN profile needs no extra
+   * config. A loopback bind is intentionally not advertised as LAN.
+   *
+   * @returns {Array<{ id: string, label: string, url: string, kind: string }>}
+   */
+  function endpoints() {
+    /** @type {Array<{ id: string, label: string, url: string, kind: string }>} */
+    const list = []
+    const seen = new Set()
+    function add(id, label, url, kind) {
+      const normalized = normalizeBaseUrl(url)
+      if (seen.has(normalized)) return
+      seen.add(normalized)
+      list.push({ id, label, url: normalized, kind })
+    }
+
+    if (Array.isArray(config.endpoints)) {
+      config.endpoints.forEach((entry, index) => {
+        if (entry === null || typeof entry !== 'object') return
+        if (typeof entry.url !== 'string' || entry.url.trim() === '') return
+        add(
+          String(entry.id ?? `endpoint-${String(index + 1)}`),
+          String(entry.label ?? entry.id ?? `连接 ${String(index + 1)}`),
+          entry.url,
+          String(entry.kind ?? 'custom'),
+        )
+      })
+    }
+
+    if (typeof config.publicUrl === 'string' && config.publicUrl.trim() !== '') {
+      add('public', '公网 / 自定义', config.publicUrl, 'custom')
+    }
+
+    const bound = bindOrigin()
+    if (bound !== undefined && typeof webServer.host === 'string' && !isLoopbackHost(webServer.host)) {
+      add('lan', '局域网', bound, 'lan')
+    }
+
+    if (list.length === 0) add('local', '本机', currentBase(), 'local')
+    return list
+  }
+
   const home = process.env.DSH_HOME?.trim() || join(homedir(), '.dsh')
   const directory = join(home, 'mobile')
   const file = join(directory, 'pairing.json')
@@ -238,9 +325,11 @@ export async function apply(ctx, config = {}) {
     code = randomBytes(8).toString('hex').toUpperCase()
     expiresAt = Date.now() + ttlSeconds * 1000
     consumed = false
+    const endpointList = endpoints()
     const payload = {
       v: 1,
-      base: currentBase(),
+      base: endpointList[0]?.url ?? currentBase(),
+      endpoints: endpointList,
       code,
       expiresAt: new Date(expiresAt).toISOString(),
       port: webServer.port,
@@ -252,6 +341,44 @@ export async function apply(ctx, config = {}) {
     await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
     await rename(temporary, file)
     return payload
+  }
+
+  /**
+   * The pairing page shows a one-time login code, so keep it on the desktop.
+   *
+   * Loopback is the normal case. When DSH binds a concrete LAN/Tailscale IP
+   * there is no loopback listener, so a browser on the same machine connects
+   * with remoteAddress === localAddress; allow only that, and only when the
+   * Host header names the bind address. A reverse proxy (frp / Tailscale
+   * serve) sees 127.0.0.1 as its peer but carries the public Host, and is
+   * rejected so the code page is never exposed through the tunnel.
+   *
+   * @param {import('node:http').IncomingMessage} req
+   * @returns {boolean}
+   */
+  function isLocalPairingRequest(req) {
+    // Never accept a request that a reverse proxy forwarded, even if the
+    // proxy runs on this machine. The pairing code page is desktop-only.
+    if (req.headers?.['x-forwarded-for'] !== undefined || req.headers?.forwarded !== undefined) {
+      return false
+    }
+    const hostHeader = String(req.headers?.host ?? '').toLowerCase()
+    if (hostHeader === '') return isLoopback(req)
+    const host = hostHeader.startsWith('[')
+      ? hostHeader.slice(1, hostHeader.indexOf(']'))
+      : hostHeader.split(':')[0]
+    const bind = String(webServer.host ?? '').toLowerCase()
+    const hostMatchesBind = host === bind || (isLoopbackHost(host) && isLoopbackHost(bind))
+    if (!hostMatchesBind) return false
+    if (isLoopbackHost(bind)) return isLoopback(req)
+    const remote = req.socket?.remoteAddress
+    const local = req.socket?.localAddress
+    return (
+      typeof remote === 'string' &&
+      typeof local === 'string' &&
+      remote === local &&
+      !isLoopback(req)
+    )
   }
 
   /**
@@ -279,7 +406,7 @@ export async function apply(ctx, config = {}) {
    */
   async function handlePair(req, res) {
     if (req.method === 'GET') {
-      if (!isLoopback(req)) {
+      if (!isLocalPairingRequest(req)) {
         res.writeHead(404)
         res.end()
         return
@@ -291,20 +418,40 @@ export async function apply(ctx, config = {}) {
           ctx.logger?.warn?.(`dsh-mobile-bridge: rotate failed: ${String(error)}`)
         }
       }
-      const base = currentBase()
-      const loopbackBase = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(base)
-      const pairingUrl =
-        `dshmobile://pair?base=${encodeURIComponent(base)}&code=${encodeURIComponent(code)}`
-      let qrSvg = ''
+      let endpointList
       try {
-        qrSvg = await QRCode.toString(pairingUrl, {
-          type: 'svg',
-          margin: 1,
-          width: 240,
-          errorCorrectionLevel: 'M',
-        })
+        endpointList = endpoints()
       } catch (error) {
-        ctx.logger?.warn?.(`dsh-mobile-bridge: QR generation failed: ${String(error)}`)
+        sendHtml(
+          res,
+          500,
+          `<h1>DSH Mobile 配对配置错误</h1><p>${escapeHtml(
+            error instanceof Error ? error.message : String(error),
+          )}</p>`,
+        )
+        return
+      }
+      const loopbackOnly = endpointList.every((endpoint) => isLoopbackUrl(endpoint.url))
+      const cards = []
+      for (const endpoint of endpointList) {
+        const pairingUrl =
+          `dshmobile://pair?base=${encodeURIComponent(endpoint.url)}&code=${encodeURIComponent(code)}`
+        let qrSvg = ''
+        try {
+          qrSvg = await QRCode.toString(pairingUrl, {
+            type: 'svg',
+            margin: 1,
+            width: 200,
+            errorCorrectionLevel: 'M',
+          })
+        } catch (error) {
+          ctx.logger?.warn?.(`dsh-mobile-bridge: QR generation failed: ${String(error)}`)
+        }
+        cards.push(`<section class="endpoint">
+<h2>${escapeHtml(endpoint.label)}</h2>
+<div class="qr">${qrSvg}</div>
+<p class="url"><code>${escapeHtml(endpoint.url)}</code></p>
+</section>`)
       }
       const html = `<!doctype html>
 <html lang="zh-CN">
@@ -313,22 +460,26 @@ export async function apply(ctx, config = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DSH Mobile 配对</title>
 <style>
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:36rem;margin:3rem auto;padding:0 1.25rem;color:#1f2328}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:42rem;margin:3rem auto;padding:0 1.25rem;color:#1f2328}
 code,pre{background:#f6f8fa;border:1px solid #d0d7de;border-radius:.5rem;padding:.25rem .5rem}
 pre{font-size:1.75rem;letter-spacing:.18em;text-align:center;padding:1rem}
-.qr{display:flex;justify-content:center;margin:1rem 0}
-.qr svg{width:240px;max-width:80vw;height:auto}
+.endpoints{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;margin:1.5rem 0}
+.endpoint{border:1px solid #d0d7de;border-radius:.75rem;padding:1rem;background:#fff}
+.endpoint h2{font-size:1rem;margin:0 0 .5rem}
+.endpoint .url{word-break:break-all;font-size:.82rem;line-height:1.5}
+.qr{display:flex;justify-content:center;margin:.5rem 0}
+.qr svg{width:200px;max-width:70vw;height:auto}
 .warn{background:#fff8c5;border:1px solid #d4a72c;border-radius:.5rem;padding:.75rem 1rem;line-height:1.6}
 .muted{color:#57606a;font-size:.9rem;line-height:1.6}
 </style>
 </head>
 <body>
 <h1>DSH Mobile 配对</h1>
-${loopbackBase ? '<p class="warn">当前 publicUrl 为空，二维码里是回环地址，手机无法直接访问。请先在 DSH profile 中配置 publicUrl（Tailscale 或 frp 地址）并重启 DSH。</p>' : ''}
-<p>用 DSH Mobile 扫描下面的二维码，或手动输入配对码：</p>
-<div class="qr">${qrSvg}</div>
+${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定的是回环地址。请把 webserver.host 改成电脑的局域网 IP，或配置 Tailscale / frp 的 endpoints 后重启 DSH。详见 docs/lan-setup.md。</p>' : ''}
+<p>选择一种连接方式，用 DSH Mobile 扫描对应二维码。三种方式可以同时保存，之后在 App 的「连接管理」里切换。</p>
+<div class="endpoints">${cards.join('')}</div>
+<p>配对码（所有连接共用）：</p>
 <pre>${escapeHtml(code)}</pre>
-<p>服务地址：<code>${escapeHtml(base)}</code></p>
 <p>有效期至：<code>${escapeHtml(new Date(expiresAt).toISOString())}</code></p>
 <p class="muted">此页面仅本机回环地址可访问。配对码一次性使用；重启 DSH 后会重新生成。</p>
 </body>
@@ -367,11 +518,49 @@ ${loopbackBase ? '<p class="warn">当前 publicUrl 为空，二维码里是回�
       return
     }
 
+    let endpointList
+    try {
+      endpointList = endpoints()
+    } catch (error) {
+      sendJson(res, 500, {
+        error: 'endpoint-invalid',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    let requestedBase = endpointList[0]?.url
+    const presentedBase =
+      body !== null && typeof body === 'object' && typeof body.base === 'string' ? body.base.trim() : ''
+    if (presentedBase !== '') {
+      let normalized
+      try {
+        normalized = normalizeBaseUrl(presentedBase)
+      } catch {
+        sendJson(res, 400, { error: 'bad-base' })
+        return
+      }
+      const match = endpointList.find((endpoint) => endpoint.url === normalized)
+      if (match === undefined) {
+        sendJson(res, 400, {
+          error: 'unknown-base',
+          hint: 'use one of the endpoints listed on /mobile/pair',
+        })
+        return
+      }
+      requestedBase = match.url
+    }
+
+    if (requestedBase === undefined) {
+      sendJson(res, 500, { error: 'no-endpoint' })
+      return
+    }
+
     // Burn the code before issuing the URL: a retry must not replay it.
     consumed = true
     let url
     try {
-      url = connection.authenticatedUrl(`${currentBase()}/`)
+      url = connection.authenticatedUrl(`${requestedBase}/`)
     } catch (error) {
       sendJson(res, 500, {
         error: 'auth-unavailable',
@@ -379,7 +568,7 @@ ${loopbackBase ? '<p class="warn">当前 publicUrl 为空，二维码里是回�
       })
       return
     }
-    sendJson(res, 200, { url })
+    sendJson(res, 200, { url, base: requestedBase })
   }
 
   /**
@@ -393,13 +582,20 @@ ${loopbackBase ? '<p class="warn">当前 publicUrl 为空，二维码里是回�
       res.end()
       return
     }
+    let endpointList
+    try {
+      endpointList = endpoints()
+    } catch {
+      endpointList = [{ id: 'local', label: '本机', url: currentBase(), kind: 'local' }]
+    }
     sendJson(res, 200, {
       ok: true,
       name: '@dsh-mobile/bridge',
       version: VERSION,
       dsh: process.env.DSH_CLIENT_VERSION ?? null,
       port: webServer.port,
-      base: currentBase(),
+      base: endpointList[0]?.url ?? currentBase(),
+      endpoints: endpointList,
       now: new Date().toISOString(),
     })
   }

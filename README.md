@@ -2,7 +2,7 @@
 
 Android 远程控制端，用来在手机上操作桌面版 DeepSeek Harness（DSH）：会话、工作区、模型、插件、文件预览、终端、审批。
 
-**当前状态：M1 脚手架（Android 工程 + 配对/WebView/前台事件服务），等待 Android Studio 首次构建与真机验收。**
+**当前状态：M1 脚手架（Android 工程 + 配对/WebView/前台事件服务 + 三路连接切换），等待 Android Studio 首次构建与真机验收。**
 
 ## 已定方案
 
@@ -10,7 +10,7 @@ Android 远程控制端，用来在手机上操作桌面版 DeepSeek Harness（D
 - 桌面端安装两个小插件：
   - `@dsh-mobile/bridge`：配对码、二维码、公网地址、健康检查。
   - `@dsh-mobile/client-ui`：移动皮肤（M2 开始）。
-- 接入：Tailscale 主用，frp + VPS 备用。
+- 接入：局域网 / Tailscale / frp + VPS 三路，App 内保存并一键切换。
 - 通知：只做前台服务，不做杀进程推送。
 - 文件：只读 + 让 Agent 改，不做手机端直接编辑。
 
@@ -24,12 +24,14 @@ packages/
   bridge/                # M0：@dsh-mobile/bridge（Host 插件，含二维码）
   client-ui/             # M2：@dsh-mobile/client-ui（移动皮肤）
 docs/
-  m0-setup.md            # 安装 bridge、验证认证链路、Tailscale/frp
+  m0-setup.md            # 安装 bridge、验证认证链路
+  lan-setup.md           # 局域网 / Tailscale / frp + VPS 三路配置
   protocol-notes.md      # RPC / 流式 / 事件协议
   android-toolchain.md   # JDK / Android SDK 安装
 tools/
   smoke-auth.mjs         # 配对 -> Cookie -> session/list 冒烟测试
   install-m0.ps1         # 一键安装 bridge（可选）
+  lan-address.ps1        # 列出 LAN IPv4 并打印 webserver patch
 ```
 
 ## M0 快速开始
@@ -45,7 +47,7 @@ Get-Content $HOME\.dsh\mobile\pairing.json
 node .\tools\smoke-auth.mjs
 ```
 
-桌面浏览器打开 `http://127.0.0.1:53985/mobile/pair` 可以看到配对二维码。详细步骤、Tailscale/frp 配置和排错见 [docs/m0-setup.md](docs/m0-setup.md)。
+桌面浏览器打开 `http://127.0.0.1:53985/mobile/pair` 可以看到配对二维码。三路连接（局域网 / Tailscale / frp + VPS）的配置、二维码和 App 内切换见 [docs/lan-setup.md](docs/lan-setup.md)；安装与排错见 [docs/m0-setup.md](docs/m0-setup.md)。
 
 ## Android（M1）
 

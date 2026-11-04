@@ -25,10 +25,12 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsSheet(
     baseUrl: String,
+    profileLabel: String?,
     sessionCount: Int,
     version: String,
     notificationsEnabled: Boolean,
     onToggleNotifications: (Boolean) -> Unit,
+    onManageConnections: () -> Unit,
     onReload: () -> Unit,
     onRefresh: () -> Unit,
     onUnpair: () -> Unit,
@@ -44,6 +46,10 @@ fun SettingsSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("连接", style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = profileLabel ?: "未命名连接",
+                style = MaterialTheme.typography.titleSmall,
+            )
             Text(
                 text = baseUrl,
                 style = MaterialTheme.typography.bodySmall,
@@ -65,6 +71,13 @@ fun SettingsSheet(
                 OutlinedButton(onClick = onReload, modifier = Modifier.weight(1f)) {
                     Text("重新加载")
                 }
+            }
+
+            OutlinedButton(
+                onClick = onManageConnections,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("连接管理（局域网 / Tailscale / frp）")
             }
 
             HorizontalDivider()

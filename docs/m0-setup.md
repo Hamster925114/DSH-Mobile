@@ -2,6 +2,8 @@
 
 M0 只做一件事：证明“手机 App 能通过一次性配对码拿到 DSH 的浏览器 Cookie，并调用 `/api`”。
 
+> 局域网 / Tailscale / frp + VPS 三路连接的完整配置与切换见 [lan-setup.md](lan-setup.md)。
+
 不包含 Android App、移动皮肤、推送、文件写入。
 
 ---
@@ -59,13 +61,27 @@ corepack pnpm add "file:D:\project\DSH-Mobile\packages\bridge"
       name: '@dsh-mobile/bridge'
       config:
         # 先留空 = 使用 http://127.0.0.1:<实际端口>，只适合本机验证。
-        # Tailscale：'https://<machine>.<tailnet>.ts.net'
-        # frp：'https://dsh.example.com'
         publicUrl: ''
+        # 三路连接允许列表；App 配对时只能选择这里列出的地址。
+        # 先留空，按 lan-setup.md 填入实际地址后重启 DSH。
+        endpoints: []
+        # 示例：
+        # - id: lan
+        #   label: 局域网
+        #   url: 'http://192.168.1.10:53985'
+        #   kind: lan
+        # - id: tailscale
+        #   label: Tailscale
+        #   url: 'https://machine.tailnet.ts.net'
+        #   kind: tailscale
+        # - id: frp
+        #   label: frp + VPS
+        #   url: 'https://dsh.example.com'
+        #   kind: frp
         pairingTtlSeconds: 120
 ```
 
-> `publicUrl` 只影响 bridge 写进 `pairing.json` 的地址，以及换 token 时用的 base；它不会改变 DSH 的监听地址。
+> `endpoints` 只影响配对页/二维码和换 token 时使用的 base；它不会改变 DSH 的监听地址。局域网直连还需要把 `webserver.host` 改成电脑的 LAN IP（见 [lan-setup.md](lan-setup.md)）。
 
 ### 2.3 重启 DSH
 
@@ -107,15 +123,15 @@ Get-Content $HOME\.dsh\mobile\pairing.json
 http://127.0.0.1:53985/mobile/pair
 ```
 
-页面会显示二维码，内容是：
+页面会为 `endpoints` 里的每种连接各显示一个二维码，内容是：
 
 ```text
-dshmobile://pair?base=<URL 编码后的 publicUrl>&code=<配对码>
+dshmobile://pair?base=<URL 编码后的 base>&code=<配对码>
 ```
 
 手机 DSH Mobile 的“扫码”会解析这个深链。也可以手动输入页面上的 16 位配对码。
 
-> 如果页面顶部出现黄色警告，说明 `publicUrl` 为空，二维码里是 `http://127.0.0.1:...`，手机无法访问。先按 §5/§6 配置 Tailscale 或 frp，再重启 DSH。
+> 如果页面顶部出现黄色警告，说明当前没有手机可达的地址：DSH 绑定的是回环地址。先把 `webserver.host` 改成电脑 LAN IP，或配置 Tailscale/frp 的 `endpoints`，再重启 DSH。
 
 二维码由 bridge 的 `qrcode` 依赖在本地生成，不经过第三方服务。安装脚本会一并安装该依赖；如果是手动安装，进入 `packages/bridge` 执行一次 `corepack pnpm install`。
 
@@ -284,6 +300,8 @@ server {
 ```
 
 > patch 会整体替换该插件的 `config`，不要漏字段。改完重启。
+>
+> 需要手机在同一 Wi-Fi 直连时，把 `host` 改成电脑的具体 LAN IP（不能写 `0.0.0.0`），并同步修改 `web-runtime.publicUrl`；详见 [lan-setup.md](lan-setup.md)。
 
 ---
 

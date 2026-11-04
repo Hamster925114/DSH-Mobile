@@ -50,7 +50,7 @@ sealed interface PairResult {
  * The cookie lives in Android's CookieManager so the WebView and OkHttp share
  * the same login state.
  */
-class DshApi(private val settings: SettingsRepository) {
+class DshApi {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -71,7 +71,10 @@ class DshApi(private val settings: SettingsRepository) {
             val code = rawCode.trim().uppercase()
             if (code.isEmpty()) throw IllegalArgumentException("配对码不能为空")
 
-            val pairBody = buildJsonObject { put("code", code) }
+            val pairBody = buildJsonObject {
+                put("code", code)
+                put("base", base)
+            }
             val pairJson = postJson("$base/mobile/pair", pairBody)
             val tokenUrl = pairJson["url"]?.jsonPrimitive?.contentOrNull
                 ?: throw IOException("配对响应缺少 url")
@@ -95,10 +98,16 @@ class DshApi(private val settings: SettingsRepository) {
 
             val hello = getHello(base)
             val count = sessionCountBlocking(base)
-            settings.setBaseUrl(base)
             PairResult.Success(PairOutcome(base, count, hello))
         } catch (error: Exception) {
-            PairResult.Failure(error.message ?: "配对失败")
+            val message = error.message ?: "配对失败"
+            PairResult.Failure(
+                if (message.contains("unknown-base")) {
+                    "桌面 bridge 未配置这个地址。请在 profile 的 endpoints 里加入 $rawBaseUrl，或改用配对页列出的地址。"
+                } else {
+                    message
+                },
+            )
         }
     }
 

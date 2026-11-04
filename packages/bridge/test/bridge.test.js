@@ -21,7 +21,8 @@ async function createBridge(config = {}) {
     webServer: {
       protocol: 'http:',
       port: 53985,
-      getOrigin: () => 'http://127.0.0.1:53985',
+      host: config.host ?? '127.0.0.1',
+      getOrigin: () => `http://${String(config.host ?? '127.0.0.1')}:53985`,
       register: (route) => {
         routes.set(route.path, route)
         return () => routes.delete(route.path)
@@ -55,11 +56,18 @@ async function createBridge(config = {}) {
  * @param {{ method?: string, body?: string, remoteAddress?: string }} [options]
  */
 function makeRequest(options = {}) {
-  const { method = 'GET', body, remoteAddress = '127.0.0.1' } = options
+  const {
+    method = 'GET',
+    body,
+    remoteAddress = '127.0.0.1',
+    localAddress = remoteAddress,
+    headers = {},
+  } = options
   const chunks = body === undefined ? [] : [Buffer.from(body, 'utf8')]
   return {
     method,
-    socket: { remoteAddress },
+    headers,
+    socket: { remoteAddress, localAddress },
     async *[Symbol.asyncIterator]() {
       yield* chunks
     },
@@ -120,6 +128,7 @@ test('POST /mobile/pair exchanges a valid one-time code', async () => {
     assert.equal(response.status, 200)
     assert.deepEqual(JSON.parse(response.body), {
       url: 'https://example.test/?token=test-token',
+      base: 'https://example.test',
     })
   } finally {
     await bridge.cleanup()
@@ -215,6 +224,78 @@ test('GET /mobile/pair renders the code only over loopback', async () => {
   }
 })
 
+test('GET /mobile/pair allows a local browser on a LAN bind', async () => {
+  const bridge = await createBridge({ host: '192.168.1.10' })
+  try {
+    const route = bridge.routes.get('/mobile/pair')
+    const local = makeResponse()
+    await route.handler(
+      makeRequest({
+        remoteAddress: '192.168.1.10',
+        localAddress: '192.168.1.10',
+        headers: { host: '192.168.1.10:53985' },
+      }),
+      local,
+    )
+    assert.equal(local.status, 200)
+    assert.match(local.body, /192\.168\.1\.10:53985/)
+
+    const phone = makeResponse()
+    await route.handler(
+      makeRequest({
+        remoteAddress: '192.168.1.20',
+        localAddress: '192.168.1.10',
+        headers: { host: '192.168.1.10:53985' },
+      }),
+      phone,
+    )
+    assert.equal(phone.status, 404)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('GET /mobile/pair rejects a public proxy Host', async () => {
+  const bridge = await createBridge({ publicUrl: 'https://dsh.example.com' })
+  try {
+    const route = bridge.routes.get('/mobile/pair')
+    const response = makeResponse()
+    await route.handler(
+      makeRequest({
+        remoteAddress: '127.0.0.1',
+        localAddress: '127.0.0.1',
+        headers: { host: 'dsh.example.com' },
+      }),
+      response,
+    )
+    assert.equal(response.status, 404)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('GET /mobile/pair rejects a forwarded proxy request', async () => {
+  const bridge = await createBridge()
+  try {
+    const route = bridge.routes.get('/mobile/pair')
+    const response = makeResponse()
+    await route.handler(
+      makeRequest({
+        remoteAddress: '127.0.0.1',
+        localAddress: '127.0.0.1',
+        headers: {
+          host: '127.0.0.1:53985',
+          'x-forwarded-for': '203.0.113.9',
+        },
+      }),
+      response,
+    )
+    assert.equal(response.status, 404)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
 test('GET /mobile/pair warns when the base is loopback', async () => {
   const bridge = await createBridge()
   try {
@@ -222,7 +303,85 @@ test('GET /mobile/pair warns when the base is loopback', async () => {
     const page = makeResponse()
     await route.handler(makeRequest({ remoteAddress: '127.0.0.1' }), page)
     assert.equal(page.status, 200)
-    assert.match(page.body, /publicUrl 为空/)
+    assert.match(page.body, /没有手机可达的地址/)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('GET /mobile/pair lists every configured endpoint', async () => {
+  const bridge = await createBridge({
+    endpoints: [
+      { id: 'lan', label: '局域网', url: 'http://192.168.1.10:53985', kind: 'lan' },
+      { id: 'tailscale', label: 'Tailscale', url: 'https://phone.example.ts.net', kind: 'tailscale' },
+    ],
+  })
+  try {
+    const pairing = JSON.parse(await readFile(join(bridge.home, 'mobile', 'pairing.json'), 'utf8'))
+    assert.deepEqual(
+      pairing.endpoints.map((endpoint) => endpoint.id),
+      ['lan', 'tailscale'],
+    )
+    assert.equal(pairing.base, 'http://192.168.1.10:53985')
+
+    const route = bridge.routes.get('/mobile/pair')
+    const page = makeResponse()
+    await route.handler(makeRequest({ remoteAddress: '127.0.0.1' }), page)
+    assert.equal(page.status, 200)
+    assert.match(page.body, /局域网/)
+    assert.match(page.body, /Tailscale/)
+    assert.equal((page.body.match(/<svg/g) ?? []).length, 2)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('POST /mobile/pair can select a configured endpoint', async () => {
+  const bridge = await createBridge({
+    endpoints: [
+      { id: 'lan', label: '局域网', url: 'http://192.168.1.10:53985', kind: 'lan' },
+      { id: 'tailscale', label: 'Tailscale', url: 'https://phone.example.ts.net', kind: 'tailscale' },
+    ],
+  })
+  try {
+    const pairing = JSON.parse(await readFile(join(bridge.home, 'mobile', 'pairing.json'), 'utf8'))
+    const route = bridge.routes.get('/mobile/pair')
+
+    const response = makeResponse()
+    await route.handler(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ code: pairing.code, base: 'https://phone.example.ts.net' }),
+      }),
+      response,
+    )
+    assert.equal(response.status, 200)
+    assert.deepEqual(JSON.parse(response.body), {
+      url: 'https://phone.example.ts.net/?token=test-token',
+      base: 'https://phone.example.ts.net',
+    })
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('POST /mobile/pair rejects an endpoint outside the allowlist', async () => {
+  const bridge = await createBridge({
+    endpoints: [{ id: 'lan', label: '局域网', url: 'http://192.168.1.10:53985' }],
+  })
+  try {
+    const pairing = JSON.parse(await readFile(join(bridge.home, 'mobile', 'pairing.json'), 'utf8'))
+    const route = bridge.routes.get('/mobile/pair')
+    const response = makeResponse()
+    await route.handler(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ code: pairing.code, base: 'https://evil.example' }),
+      }),
+      response,
+    )
+    assert.equal(response.status, 400)
+    assert.equal(JSON.parse(response.body).error, 'unknown-base')
   } finally {
     await bridge.cleanup()
   }

@@ -61,10 +61,12 @@ import com.dshmobile.app.service.DshEventService
 @Composable
 fun HomeScreen(
     baseUrl: String,
+    profileLabel: String?,
     sessionCount: Int,
     version: String,
     notificationsEnabled: Boolean,
     onToggleNotifications: (Boolean) -> Unit,
+    onManageConnections: () -> Unit,
     onUnpair: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -200,6 +202,7 @@ fun HomeScreen(
 
     DisposableEffect(webView) {
         onDispose {
+            context.stopService(Intent(context, DshEventService::class.java))
             webView.stopLoading()
             webView.destroy()
         }
@@ -283,9 +286,14 @@ fun HomeScreen(
     if (showSettings) {
         SettingsSheet(
             baseUrl = baseUrl,
+            profileLabel = profileLabel,
             sessionCount = sessionCount,
             version = version,
             notificationsEnabled = notificationsEnabled,
+            onManageConnections = {
+                showSettings = false
+                onManageConnections()
+            },
             onToggleNotifications = { enabled ->
                 if (enabled &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

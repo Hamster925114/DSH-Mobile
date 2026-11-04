@@ -41,25 +41,27 @@ APK 输出：`app\build\outputs\apk\debug\app-debug.apk`。
 ### 2.1 桌面端准备
 
 1. 安装 bridge（见 [docs/m0-setup.md](../docs/m0-setup.md)）。
-2. 在 desktop profile 的 `cordis.patch.yml` 中把 `publicUrl` 设为手机能访问的地址：
+2. 按 [docs/lan-setup.md](../docs/lan-setup.md) 配置三路地址：
+   - 局域网：`http://<电脑局域网 IP>:53985`（DSH `webserver.host` 必须绑定该 LAN IP，不能写 `0.0.0.0`）
    - Tailscale：`https://<machine>.<tailnet>.ts.net`
-   - frp：`https://dsh.example.com`
-   - 局域网调试：`http://<电脑局域网 IP>:53985`
-3. 完整重启 DSH。
-4. 在电脑浏览器打开 `http://127.0.0.1:53985/mobile/pair`，会显示二维码和 16 位配对码。
+   - frp + VPS：`https://dsh.example.com`
+3. 把三个地址写进 bridge 的 `endpoints`，并把域名加入 `connection.trustedHosts`。
+4. 完整重启 DSH。
+5. 在电脑浏览器打开 `http://<bind-ip>:53985/mobile/pair`，页面会为每种连接显示二维码和同一个 16 位配对码。
 
-> 如果页面顶部出现黄色警告，说明 `publicUrl` 还是空的，二维码里是 `127.0.0.1`，手机连不上。
+> 如果页面顶部出现黄色警告，说明当前没有手机可达的地址：DSH 绑定的是回环地址。先改 `webserver.host` 或配置 `endpoints`，再重启 DSH。
 
 ### 2.2 手机端
 
 1. 打开 DSH Mobile。
-2. 点“扫码”，扫桌面配对页的二维码；或手动填地址 + 配对码。
-3. 点“连接”。
+2. 在“连接方式”里选局域网 / Tailscale / frp + VPS；也可以点“连接管理”先编辑地址。
+3. 点“扫码”，扫桌面配对页对应连接的二维码；或手动填地址 + 配对码。
+4. 点“连接”。
 
 App 会：
 
 ```text
-POST {base}/mobile/pair          {code}
+POST {base}/mobile/pair          {code, base}
   -> {url}                       // 带 launch token 的 URL
 GET  {url}                       // 303 + Set-Cookie
   -> 写入 Android CookieManager
@@ -68,7 +70,7 @@ POST {base}/api/session/list     // {"args":{"_request":{}}}
   -> 读取会话数量
 ```
 
-Cookie 同时供 WebView 和 OkHttp 使用；成功后会保存 base URL，下次启动直接进主页。
+Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应的连接槽位，下次启动直接进主页。三种连接使用不同 Host，Cookie 分开；每种第一次使用都要配对一次，之后在「连接管理」里切换即可。
 
 ### 2.3 地址格式
 
@@ -85,9 +87,10 @@ Cookie 同时供 WebView 和 OkHttp 使用；成功后会保存 base URL，下�
 |---|---|
 | 配对 | 手动输入、ZXing 扫码、`dshmobile://pair?...` / JSON 解析、地址归一化 |
 | 认证 | 一次性码换 token URL、抓 `Set-Cookie`、CookieManager 持久化、`/mobile/hello` 校验 |
+| 连接管理 | 局域网 / Tailscale / frp + VPS 三个槽位，添加/编辑/删除/测试/切换，DataStore 持久化 |
 | 主页 | WebView 加载 `{base}/`，JS/DOM storage、Cookie、文件选择、下载、外链跳浏览器、返回键 |
 | 移动适配 | 注入基础 CSS（隐藏滚动条、输入框 16px 防 iOS 缩放、safe-area） |
-| 设置 | 连接信息、刷新会话数、重新加载、清除配对 |
+| 设置 | 当前连接、刷新会话数、重新加载、连接管理、清除配对 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
 | 测试 | `DshUrl`、`PairingPayload` 单元测试 |
@@ -110,14 +113,16 @@ app/src/main/java/com/dshmobile/app/
   data/
     DshUrl.kt                  # base URL 归一化/校验
     PairingPayload.kt          # 二维码/深链 JSON 解析
-    SettingsRepository.kt      # DataStore：baseUrl、通知开关
+    ConnectionProfile.kt       # 连接槽位（LAN/Tailscale/frp/CUSTOM）
+    SettingsRepository.kt      # DataStore：连接列表、当前连接、通知开关
     DshApi.kt                  # 配对、Cookie、hello、session/list RPC
   service/
     DshEventService.kt         # 前台 $events WebSocket + 通知
   ui/
     DshMobileApp.kt            # Loading / Pairing / Home 状态机
-    MainViewModel.kt           # 配对、恢复、退出、会话数
-    PairingScreen.kt
+    MainViewModel.kt           # 配对、连接切换、恢复、退出、会话数
+    PairingScreen.kt           # 配对 + 连接方式选择
+    ConnectionsScreen.kt       # 连接管理（添加/编辑/测试/删除/切换）
     HomeScreen.kt              # WebView + 文件选择/下载/设置浮层
     SettingsSheet.kt
     theme/Theme.kt
@@ -135,8 +140,9 @@ app/src/main/java/com/dshmobile/app/
 ## 5. M1 验收清单
 
 - [ ] Android Studio 能 Sync，`assembleDebug` 成功。
-- [ ] 手机与电脑同一 Tailscale tailnet（或 frp 可用）。
-- [ ] 桌面 `/mobile/pair` 显示二维码；App 扫码成功。
+- [ ] 局域网 / Tailscale / frp + VPS 至少两条链路可用。
+- [ ] 桌面 `/mobile/pair` 为每种连接显示二维码；App 扫码成功。
+- [ ] 三种连接分别配对一次后，在「连接管理」里切换不需要重新配对。
 - [ ] 连接后 WebView 显示 DSH 会话列表，不需要在手机浏览器再登录。
 - [ ] 打开一个会话，能发消息、看到流式输出。
 - [ ] 切换模型、工作区、插件页面可打开。
@@ -168,8 +174,10 @@ app/src/main/java/com/dshmobile/app/
 | 配对 410 | 码过期/已用过；刷新桌面 `/mobile/pair` 生成新码 |
 | 配对 403 | 码错误；注意大小写（App 会自动转大写） |
 | 配对 429 | 失败次数过多；等 1 分钟 |
-| 连接超时 | `publicUrl` 是否是手机可达地址；Tailscale 是否在线；防火墙 |
+| 连接超时 | 当前连接地址是否手机可达；局域网是否同网段/防火墙；Tailscale/frp 是否在线 |
 | 403 / Host 不匹配 | DSH `connection.trustedHosts` 加域名，或反代统一 Host |
+| 配对 400 `unknown-base` | 把该地址加入 bridge 的 `endpoints` 允许列表，重启 DSH |
+| 配对页 404 | 配对页只允许本机访问；用电脑打开 `http://<bind-ip>:53985/mobile/pair` |
 | WebView 白屏 | 设置里“重新加载”；看 logcat 的 `chromium` / `DshApi` |
 | 通知不出现 | Android 13+ 通知权限；设置里开关；`dsh_events` 渠道 |
 | 扫码没反应 | 相机权限；模拟器无相机时用手动输入 |

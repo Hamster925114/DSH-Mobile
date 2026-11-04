@@ -1,6 +1,7 @@
 package com.dshmobile.app.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,7 +40,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.dshmobile.app.data.ConnectionProfile
 import com.dshmobile.app.data.PairingPayload
+import com.dshmobile.app.data.baseUrlHint
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
@@ -47,11 +51,16 @@ fun PairingScreen(
     busy: Boolean,
     message: String?,
     initialBaseUrl: String,
+    profileId: String?,
+    profiles: List<ConnectionProfile>,
+    onSelectProfile: (String) -> Unit,
     onPair: (baseUrl: String, code: String) -> Unit,
+    onManageConnections: () -> Unit,
 ) {
-    var baseUrl by rememberSaveable { mutableStateOf(initialBaseUrl) }
+    var baseUrl by rememberSaveable(profileId) { mutableStateOf(initialBaseUrl) }
     var code by rememberSaveable { mutableStateOf("") }
     var scanError by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedProfile = profiles.firstOrNull { it.id == profileId }
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val contents = result.contents
@@ -63,6 +72,8 @@ fun PairingScreen(
             baseUrl = payload.baseUrl
             code = payload.code
             scanError = null
+            val matching = profiles.firstOrNull { it.baseUrl == payload.baseUrl }
+            if (matching != null && matching.id != profileId) onSelectProfile(matching.id)
         }
     }
 
@@ -88,14 +99,45 @@ fun PairingScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = "1. 在电脑上打开 DSH 的配对页，拿到配对码。",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "2. 填入 Tailscale / frp 地址和配对码，或直接扫码。",
+                text = "2. 选择局域网 / Tailscale / frp + VPS，填入地址和配对码，或直接扫码。",
                 style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Text(
+                text = "连接方式",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                profiles.forEach { profile ->
+                    FilterChip(
+                        selected = profile.id == profileId,
+                        onClick = { onSelectProfile(profile.id) },
+                        label = { Text(profile.label) },
+                        enabled = !busy,
+                    )
+                }
+            }
+            Text(
+                text = selectedProfile?.let { profile ->
+                    if (profile.baseUrl.isBlank()) {
+                        "${profile.kindLabel} · 尚未配置地址"
+                    } else {
+                        "${profile.kindLabel} · ${profile.baseUrl}"
+                    }
+                } ?: "未选择连接槽位；直接连接会保存为自定义连接。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             OutlinedTextField(
@@ -106,7 +148,12 @@ fun PairingScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("DSH 地址") },
-                placeholder = { Text("https://machine.tailnet.ts.net") },
+                placeholder = {
+                    Text(
+                        selectedProfile?.let { baseUrlHint(it.kind) }
+                            ?: "http://192.168.1.10:53985",
+                    )
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
@@ -169,10 +216,18 @@ fun PairingScreen(
                 }
             }
 
+            OutlinedButton(
+                onClick = onManageConnections,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !busy,
+            ) {
+                Text("连接管理（添加 / 切换 / 测试）")
+            }
+
             val error = message ?: scanError
-            if (!error.isNullOrBlank()) {
+            error?.takeIf { it.isNotBlank() }?.let {
                 Text(
-                    text = error,
+                    text = it,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -185,15 +240,15 @@ fun PairingScreen(
                 style = MaterialTheme.typography.titleSmall,
             )
             Text(
-                text = "Tailscale：https://<machine>.<tailnet>.ts.net\n" +
-                    "frp：https://dsh.example.com\n" +
-                    "局域网调试：http://192.168.1.10:53985",
+                text = "局域网：http://192.168.1.10:53985\n" +
+                    "Tailscale：https://<machine>.<tailnet>.ts.net\n" +
+                    "frp + VPS：https://dsh.example.com",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Text(
-                text = "配对码一次性有效，默认 120 秒。若提示 410，请在桌面重新生成。",
+                text = "配对码一次性有效，默认 120 秒。三种连接可以分别配对，之后在「连接管理」里切换。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

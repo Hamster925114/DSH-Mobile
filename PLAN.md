@@ -15,7 +15,7 @@
 - **桌面端补两个小插件**：
   1. `@dsh-mobile/bridge`：配对码/二维码、公网地址上报、设备管理、健康检查。
   2. `@dsh-mobile/client-ui`：移动端布局皮肤，复用现有 `ctx.layout` 和 `shell.bottom` 插槽。
-- **接入**：Tailscale 主用，frp + VPS 备用；App 内置两种接入方式的配置向导与说明。
+- **接入**：局域网 / Tailscale / frp + VPS 三路；App 内置三套连接配置与一键切换。
 - **不做**：杀进程推送（只用前台服务）、手机端直接编辑文件（只读 + Agent 改）。
 - **MVP 约 3–4 周，完整版约 10–11 周（2 人）**。
 
@@ -26,7 +26,7 @@
 | # | 决策 | 选择 | 对方案的影响 |
 |---|---|---|---|
 | 1 | 插件安装 | **A：安装 bridge + client-ui** | 配对二维码、移动皮肤、设备管理、健康检查可用；不做推送和文件写入 |
-| 2 | 远程接入 | **Tailscale 主用，frp + VPS 备用** | App 需支持多连接配置；内置两种方式的说明和诊断 |
+| 2 | 远程接入 | **局域网 / Tailscale / frp + VPS 三路，App 内切换** | App 需支持多连接配置；内置三种方式的说明和诊断 |
 | 3 | UI 形态 | **A：WebView + 移动皮肤** | 功能对等优先；不做全原生重写 |
 | 4 | 推送 | **仅前台服务（FGS）** | App 进程存活时可通知；被杀/被强停后不保证，明确接受此限制 |
 | 5 | 文件编辑 | **A：只读 + Agent 改** | 不新增写 API；降低安全面；手机端不直接改文件 |
@@ -202,20 +202,21 @@ sequenceDiagram
 | **Tailscale** | 个人首选 | 私有 WireGuard、无需公网 IP、Android 客户端成熟、MagicDNS 稳定 | 国内控制面偶尔慢；需要两端安装 | **主用（已定）** |
 | **frp + VPS** | 国内稳定 | 完全自控、可 TLS、可限流 | 需要 VPS 和运维 | **备用（已定）** |
 | **Cloudflare Tunnel** | 快速试用 | 零公网 IP、自带 TLS/Access | 国内可能被阻断；依赖 Cloudflare | 未选 |
-| **局域网直连** | 同 Wi-Fi | 延迟最低 | 只能在家；明文 HTTP | 仅调试 |
+| **局域网直连** | 同 Wi-Fi | 延迟最低 | 只能在家；明文 HTTP | **同网段首选** |
 
-**已定策略**：Tailscale 主用，frp + VPS 备用；App 内保存两套连接配置，可一键切换，并内置两种方式的配置向导、诊断和常见问题。
+**已定策略**：局域网（同 Wi-Fi 首选）、Tailscale（远程主用）、frp + VPS（兜底）三路并存；App 内保存三套连接配置，可一键切换，并内置三种方式的配置说明、诊断和常见问题。
 
 #### App 内的接入说明（必须实现）
 
 App 的“连接管理”页需要包含：
 
-1. **Tailscale 向导**：安装 Tailscale → 登录同一 tailnet → 电脑执行 `tailscale serve` → 填入 MagicDNS 地址 → 测试。
-2. **frp 向导**：VPS 安装 frps → 电脑配置 frpc → nginx TLS + `proxy_set_header Host 127.0.0.1:53985` → 填入域名 → 测试。
-3. **诊断**：DNS 解析、TCP 连接、TLS 证书、HTTP 状态（200/401/403）、WebSocket 握手、Cookie 是否过期。
-4. **切换**：主用/备用配置一键切换；失败自动提示切换。
-5. **常见错误**：403 是 Host 未信任；401 是 Cookie 过期；超时是隧道/防火墙；WebSocket 失败是反代未升级连接。
-6. **安全提示**：不要把 53985 直接暴露公网；frp 必须 TLS + token/IP 白名单。
+1. **局域网向导**：电脑查 LAN IP → DSH `webserver.host` 绑定该 IP（不能 `0.0.0.0`）→ 防火墙放行 53985 → 填入 `http://<ip>:53985` → 测试。
+2. **Tailscale 向导**：安装 Tailscale → 登录同一 tailnet → 电脑执行 `tailscale serve` → 填入 MagicDNS 地址 → 测试。
+3. **frp 向导**：VPS 安装 frps → 电脑配置 frpc → nginx TLS + `proxy_set_header Host $host` → 填入域名 → 测试。
+4. **诊断**：DNS 解析、TCP 连接、TLS 证书、HTTP 状态（200/401/403）、WebSocket 握手、Cookie 是否过期。
+5. **切换**：三套配置分别配对；切换后 WebView 重新加载，Cookie 按 Host 自动匹配；失败时提示切到另一套。
+6. **常见错误**：403 是 Host 未信任；401 是 Cookie 过期；超时是隧道/防火墙；WebSocket 失败是反代未升级连接；`unknown-base` 是 bridge `endpoints` 没列该地址。
+7. **安全提示**：不要把 53985 直接暴露公网；frp 必须 TLS + token/IP 白名单；配对页只允许本机访问。
 
 #### Tailscale 参考配置
 
@@ -511,7 +512,7 @@ Cookie: ...
 - [ ] 桌面重启后，旧 Cookie 仍可用（验证 30 天持久性）。
 - [ ] 记录实际端口、Host 校验行为、WebSocket 是否被代理缓冲。
 
-**已完成**：bridge 插件、单元测试（8 个，含二维码页面）、配对/认证/RPC 冒烟测试。
+**已完成**：bridge 插件、单元测试（14 个，含多 endpoint 二维码、本机配对页限制、反代拒绝、base 选择）、配对/认证/RPC 冒烟测试。
 **交付**：`docs/m0-setup.md`、`docs/protocol-notes.md`；`docs/spike-report.md` 待远程接入验证后补。
 
 **验收**：手机在 4G 下能打开会话并收到一次模型回复。
@@ -522,7 +523,8 @@ Cookie: ...
 
 - [x] Android 工程：Compose、OkHttp、WebView、ZXing（Keystore 留到 M3）。
 - [x] 配对：扫码/手动输入 → 换 Cookie → 存 Cookie。
-- [ ] 连接管理：健康检查、401 重配、网络切换、重连（健康检查/401 已有；网络切换待补）。
+- [x] 连接管理（基础）：局域网 / Tailscale / frp 三套配置、添加/编辑/删除/测试/一键切换；健康检查、401 重配、前台服务随连接切换（真机待验收）。
+- [ ] 连接诊断向导：DNS / TCP / TLS / HTTP 状态 / WebSocket / Cookie 全链路诊断与一键修复建议。
 - [x] WebView：Cookie 注入、文件选择、下载、外链、返回键、软键盘。
 - [ ] 原生设置：通知、生物识别、清除配对、诊断（通知/清除配对已有；生物识别/诊断待补）。
 - [x] 前台服务：`$events` → 审批/错误通知（完成态通知待 M2）。
@@ -530,7 +532,7 @@ Cookie: ...
 - [x] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`（含二维码）、`/mobile/hello`。
 - [x] 桌面安装/配置文档。
 
-**当前状态**：Android 脚手架已提交到 `android/`，包含配对、WebView、前台事件服务、设置和单元测试；本机没有 JDK/SDK，待用 Android Studio 首次 Sync/构建后修正编译问题。
+**当前状态**：Android 脚手架已提交到 `android/`，包含配对、三路连接管理/切换、WebView、前台事件服务、设置和单元测试；本机没有 JDK/SDK，待用 Android Studio 首次 Sync/构建后修正编译问题。三路桌面配置见 `docs/lan-setup.md`。
 
 **验收**：在手机上完成 10 个真实任务（新建会话、切工作区、换模型、看文件、开终端、装/禁插件、审批），全程不碰电脑。
 
@@ -553,7 +555,7 @@ Cookie: ...
 **目标**：可长期远程使用。
 
 - [ ] bridge 设备管理：设备列表、命名、撤销、审计。
-- [ ] 连接配置管理：Tailscale/frp 双配置、一键切换、诊断向导。
+- [ ] 连接配置管理增强：三路配置导入/导出、自动诊断向导、切换失败自动回退。
 - [ ] 前台服务稳定性：Doze/断网重连、电量优化、Android 15 时长限制提示。
 - [ ] 证书固定、生物识别锁、截屏保护。
 - [ ] 审批策略：危险工具二次确认、仅桌面审批开关。
@@ -735,8 +737,20 @@ DSH-Mobile/
     - id: dsh-mobile-bridge
       name: '@dsh-mobile/bridge'
       config:
-        # Tailscale：填 MagicDNS 地址；frp：填公网域名
-        publicUrl: 'https://<machine>.<tailnet>.ts.net'
+        publicUrl: ''
+        endpoints:
+          - id: lan
+            label: 局域网
+            url: 'http://192.168.1.10:53985'
+            kind: lan
+          - id: tailscale
+            label: Tailscale
+            url: 'https://machine.tailnet.ts.net'
+            kind: tailscale
+          - id: frp
+            label: frp + VPS
+            url: 'https://dsh.example.com'
+            kind: frp
         pairingTtlSeconds: 120
 
 # 4) 安装移动皮肤（M2 再装）
