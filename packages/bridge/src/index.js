@@ -21,6 +21,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import QRCode from 'qrcode'
 
 /** Stable Cordis plugin name. */
 export const name = 'dsh-mobile-bridge'
@@ -290,6 +291,21 @@ export async function apply(ctx, config = {}) {
           ctx.logger?.warn?.(`dsh-mobile-bridge: rotate failed: ${String(error)}`)
         }
       }
+      const base = currentBase()
+      const loopbackBase = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(base)
+      const pairingUrl =
+        `dshmobile://pair?base=${encodeURIComponent(base)}&code=${encodeURIComponent(code)}`
+      let qrSvg = ''
+      try {
+        qrSvg = await QRCode.toString(pairingUrl, {
+          type: 'svg',
+          margin: 1,
+          width: 240,
+          errorCorrectionLevel: 'M',
+        })
+      } catch (error) {
+        ctx.logger?.warn?.(`dsh-mobile-bridge: QR generation failed: ${String(error)}`)
+      }
       const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -300,14 +316,19 @@ export async function apply(ctx, config = {}) {
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:36rem;margin:3rem auto;padding:0 1.25rem;color:#1f2328}
 code,pre{background:#f6f8fa;border:1px solid #d0d7de;border-radius:.5rem;padding:.25rem .5rem}
 pre{font-size:1.75rem;letter-spacing:.18em;text-align:center;padding:1rem}
+.qr{display:flex;justify-content:center;margin:1rem 0}
+.qr svg{width:240px;max-width:80vw;height:auto}
+.warn{background:#fff8c5;border:1px solid #d4a72c;border-radius:.5rem;padding:.75rem 1rem;line-height:1.6}
 .muted{color:#57606a;font-size:.9rem;line-height:1.6}
 </style>
 </head>
 <body>
 <h1>DSH Mobile 配对</h1>
-<p>在手机 App 中输入下面的配对码（M0 手动输入；M1 改为扫码）：</p>
+${loopbackBase ? '<p class="warn">当前 publicUrl 为空，二维码里是回环地址，手机无法直接访问。请先在 DSH profile 中配置 publicUrl（Tailscale 或 frp 地址）并重启 DSH。</p>' : ''}
+<p>用 DSH Mobile 扫描下面的二维码，或手动输入配对码：</p>
+<div class="qr">${qrSvg}</div>
 <pre>${escapeHtml(code)}</pre>
-<p>服务地址：<code>${escapeHtml(currentBase())}</code></p>
+<p>服务地址：<code>${escapeHtml(base)}</code></p>
 <p>有效期至：<code>${escapeHtml(new Date(expiresAt).toISOString())}</code></p>
 <p class="muted">此页面仅本机回环地址可访问。配对码一次性使用；重启 DSH 后会重新生成。</p>
 </body>

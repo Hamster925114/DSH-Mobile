@@ -8,6 +8,7 @@ pnpm-debug.log*
 
 # Android
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/.idea/
 android/**/build/

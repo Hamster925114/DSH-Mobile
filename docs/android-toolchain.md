@@ -76,23 +76,24 @@ sdkmanager --list | Select-String "platforms;android-35"
 - 二维码：ZXing core（不依赖 GMS）。
 - 安全：Android Keystore 存 Cookie/证书；`EncryptedSharedPreferences` 或 DataStore + Keystore。
 - 不使用 Firebase / GMS；通知用前台服务。
-- 包名建议 `com.dshmobile.app`。
+- 包名已确定：`com.dshmobile.app`；应用名 `DSH Mobile`。
 
 ---
 
 ## 5. 本机现状
 
 ```text
-java:   未安装
-adb:    未安装
-gradle: 未安装
+java:   未安装（Android Studio 自带 JBR 17 即可）
+adb:    未安装（随 SDK Platform-Tools）
+gradle: 未安装（仓库已包含 Gradle 8.11.1 wrapper）
 ```
 
-安装完成后，在项目根目录执行：
+仓库已包含 `android/gradlew`、`gradlew.bat`、`gradle/wrapper/gradle-wrapper.jar`。安装 Android Studio + SDK 35 后，用 Android Studio 打开 `android/` 目录，或：
 
 ```powershell
 cd android
-.\gradlew.bat assembleDebug
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:testDebugUnitTest
 ```
 
-> 如果使用 Android Studio，直接打开 `android/` 目录即可；Gradle wrapper 由 Android Studio 生成/同步。
+> 本机没有 JDK/SDK 时不要执行上面的命令；直接用 Android Studio 的 bundled JDK 和 SDK Manager。首次 Sync 会下载 Gradle 8.11.1 与依赖。

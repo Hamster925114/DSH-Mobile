@@ -99,6 +99,26 @@ Get-Content $HOME\.dsh\mobile\pairing.json
 - 重启 DSH 会生成新 code。
 - 桌面浏览器打开 `http://127.0.0.1:53985/mobile/pair` 也能看到 code（仅本机回环可访问）。
 
+### 3.1 扫码配对（M1）
+
+桌面浏览器打开：
+
+```text
+http://127.0.0.1:53985/mobile/pair
+```
+
+页面会显示二维码，内容是：
+
+```text
+dshmobile://pair?base=<URL 编码后的 publicUrl>&code=<配对码>
+```
+
+手机 DSH Mobile 的“扫码”会解析这个深链。也可以手动输入页面上的 16 位配对码。
+
+> 如果页面顶部出现黄色警告，说明 `publicUrl` 为空，二维码里是 `http://127.0.0.1:...`，手机无法访问。先按 §5/§6 配置 Tailscale 或 frp，再重启 DSH。
+
+二维码由 bridge 的 `qrcode` 依赖在本地生成，不经过第三方服务。安装脚本会一并安装该依赖；如果是手动安装，进入 `packages/bridge` 执行一次 `corepack pnpm install`。
+
 ---
 
 ## 4. 冒烟测试

@@ -511,7 +511,7 @@ Cookie: ...
 - [ ] 桌面重启后，旧 Cookie 仍可用（验证 30 天持久性）。
 - [ ] 记录实际端口、Host 校验行为、WebSocket 是否被代理缓冲。
 
-**已完成**：bridge 插件、单元测试（7 个）、配对/认证/RPC 冒烟测试。
+**已完成**：bridge 插件、单元测试（8 个，含二维码页面）、配对/认证/RPC 冒烟测试。
 **交付**：`docs/m0-setup.md`、`docs/protocol-notes.md`；`docs/spike-report.md` 待远程接入验证后补。
 
 **验收**：手机在 4G 下能打开会话并收到一次模型回复。
@@ -520,15 +520,17 @@ Cookie: ...
 
 **目标**：一个可日常使用的 Android App。
 
-- [ ] Android 工程：Compose、OkHttp、WebView、Keystore、ZXing。
-- [ ] 配对：扫码/粘贴 URL → 换 Cookie → 存 Cookie。
-- [ ] 连接管理：健康检查、401 重配、网络切换、重连。
-- [ ] WebView：Cookie 注入、文件选择、下载、外链、返回键、软键盘。
-- [ ] 原生设置：通知、生物识别、清除配对、诊断。
-- [ ] 前台服务：`$events` → 完成/审批/错误通知。
-- [ ] CSS 移动适配（无插件版）：隐藏桌面 chrome、输入框贴底、安全区。
-- [ ] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`、`/mobile/hello`。
-- [ ] 桌面安装/配置文档。
+- [x] Android 工程：Compose、OkHttp、WebView、ZXing（Keystore 留到 M3）。
+- [x] 配对：扫码/手动输入 → 换 Cookie → 存 Cookie。
+- [ ] 连接管理：健康检查、401 重配、网络切换、重连（健康检查/401 已有；网络切换待补）。
+- [x] WebView：Cookie 注入、文件选择、下载、外链、返回键、软键盘。
+- [ ] 原生设置：通知、生物识别、清除配对、诊断（通知/清除配对已有；生物识别/诊断待补）。
+- [x] 前台服务：`$events` → 审批/错误通知（完成态通知待 M2）。
+- [x] CSS 移动适配（基础版）：隐藏滚动条、输入框 16px、安全区；完整移动皮肤在 M2。
+- [x] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`（含二维码）、`/mobile/hello`。
+- [x] 桌面安装/配置文档。
+
+**当前状态**：Android 脚手架已提交到 `android/`，包含配对、WebView、前台事件服务、设置和单元测试；本机没有 JDK/SDK，待用 Android Studio 首次 Sync/构建后修正编译问题。
 
 **验收**：在手机上完成 10 个真实任务（新建会话、切工作区、换模型、看文件、开终端、装/禁插件、审批），全程不碰电脑。
 
@@ -588,7 +590,7 @@ Cookie: ...
 DSH-Mobile/
 ├─ android/                     # Gradle 工程
 │  ├─ app/
-│  │  ├─ src/main/kotlin/...    # Compose、WebView、网络、通知
+│  │  ├─ src/main/java/...      # Compose、WebView、网络、通知
 │  │  └─ src/test/              # 单测
 │  ├─ build.gradle.kts
 │  └─ settings.gradle.kts

@@ -17,5 +17,8 @@
   "scripts": {
     "test": "node --test \"test/*.test.js\""
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
 }

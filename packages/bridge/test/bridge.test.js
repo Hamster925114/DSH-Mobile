@@ -205,10 +205,24 @@ test('GET /mobile/pair renders the code only over loopback', async () => {
     await route.handler(makeRequest({ remoteAddress: '127.0.0.1' }), local)
     assert.equal(local.status, 200)
     assert.match(local.body, /DSH Mobile 配对/)
+    assert.match(local.body, /<svg/)
 
     const remote = makeResponse()
     await route.handler(makeRequest({ remoteAddress: '203.0.113.7' }), remote)
     assert.equal(remote.status, 404)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('GET /mobile/pair warns when the base is loopback', async () => {
+  const bridge = await createBridge()
+  try {
+    const route = bridge.routes.get('/mobile/pair')
+    const page = makeResponse()
+    await route.handler(makeRequest({ remoteAddress: '127.0.0.1' }), page)
+    assert.equal(page.status, 200)
+    assert.match(page.body, /publicUrl 为空/)
   } finally {
     await bridge.cleanup()
   }
