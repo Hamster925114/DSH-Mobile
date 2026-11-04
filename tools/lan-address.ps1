@@ -21,12 +21,27 @@ if ($addresses.Count -eq 0) {
     exit 1
 }
 
+function Test-PrivateIPv4([string]$Address) {
+    $bytes = [System.Net.IPAddress]::Parse($Address).GetAddressBytes()
+    if ($bytes[0] -eq 10) { return $true }
+    if ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) { return $true }
+    if ($bytes[0] -eq 192 -and $bytes[1] -eq 168) { return $true }
+    return $false
+}
+
 Write-Host 'Available IPv4 addresses:' -ForegroundColor Cyan
 $addresses | Select-Object InterfaceAlias, IPAddress, PrefixLength | Format-Table -AutoSize
 
+$private = $addresses | Where-Object { Test-PrivateIPv4 $_.IPAddress } | Select-Object -First 1
 if ([string]::IsNullOrWhiteSpace($IpAddress)) {
-    $IpAddress = $addresses[0].IPAddress
-    Write-Host "Using the first address by default: $IpAddress" -ForegroundColor Yellow
+    if ($null -ne $private) {
+        $IpAddress = $private.IPAddress
+        Write-Host "Using the first RFC1918 LAN address by default: $IpAddress" -ForegroundColor Yellow
+    } else {
+        $IpAddress = $addresses[0].IPAddress
+        Write-Warning 'No RFC1918 LAN address found. 100.64.0.0/10 is CGNAT (Tailscale uses it too); a phone on the same Wi-Fi may not reach it. Use your actual LAN IP or Tailscale.'
+        Write-Host "Using the first address by default: $IpAddress" -ForegroundColor Yellow
+    }
 }
 
 $match = $addresses | Where-Object { $_.IPAddress -eq $IpAddress } | Select-Object -First 1
