@@ -25,6 +25,8 @@ packages/
   client-ui/             # M2：@dsh-mobile/client-ui（移动皮肤）
 docs/
   m0-setup.md            # 安装 bridge、验证认证链路
+  protocol-notes.md      # RPC / 流式 / 事件协议
+  android-toolchain.md   # JDK / Android SDK 安装
 tools/
   smoke-auth.mjs         # 配对 -> Cookie -> session/list 冒烟测试
   install-m0.ps1         # 一键安装 bridge（可选）
