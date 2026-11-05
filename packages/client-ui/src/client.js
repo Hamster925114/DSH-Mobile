@@ -136,9 +136,21 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-bg-base, #0d1117);
       }
       /* DSH keeps the collapsed column in the grid for the desktop rail. On
-         phones it is a full-screen overlay and would otherwise eat every tap. */
-      html[data-dsh-mobile-ui="1"] .mP3x-q_frame[data-rightbar-collapsed] .mP3x-q_rightbarCol {
+         phones hide it only while no fullscreen panel is open; the Files and
+         Terminal panels deliberately use data-rightbar-collapsed with an
+         open overlay. Hiding on the collapsed attribute alone made the panels
+         open invisibly. */
+      html[data-dsh-mobile-ui="1"] .mP3x-q_frame[data-rightbar-collapsed] .mP3x-q_rightbarCol:not(:has([data-sidebar-right-open="true"])) {
         display: none !important;
+      }
+      html[data-dsh-mobile-ui="1"] .mP3x-q_frame[data-rightbar-collapsed] .mP3x-q_rightbarCol:has([data-sidebar-right-open="true"]) {
+        display: block !important;
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        z-index: 45;
+        background: var(--dsw-alias-bg-base, #0d1117);
       }
 
       @media (max-width: 820px) {
@@ -196,14 +208,27 @@ window.__ModuleLoader__.load({
         // Files/Terminal use DSH's right-sidebar service directly. DOM clicking
         // is brittle because the collapsed panel is display:none on phones.
         let openPanel = () => false
+        let closePanel = () => false
         window.__DSH_MOBILE_OPEN_PANEL__ = (kind) => openPanel(kind)
+        window.__DSH_MOBILE_CLOSE_PANEL__ = () => closePanel()
         ctx.inject(['sidebarRight'], (scope) => {
+          const service = scope.sidebarRight
           openPanel = (kind) => {
             try {
-              if (!scope.sidebarRight || typeof scope.sidebarRight.openTab !== 'function') {
+              if (!service || typeof service.openTab !== 'function') return false
+              service.openTab(kind)
+              return true
+            } catch (error) {
+              return false
+            }
+          }
+          closePanel = () => {
+            try {
+              const sessionId = service?.mounted?.getSnapshot?.()
+              if (sessionId === undefined || typeof service.isExpanded !== 'function') {
                 return false
               }
-              scope.sidebarRight.openTab(kind, { replaceTab: true })
+              if (service.isExpanded(sessionId)) service.toggleExpanded(sessionId)
               return true
             } catch (error) {
               return false
@@ -211,6 +236,7 @@ window.__ModuleLoader__.load({
           }
           return () => {
             openPanel = () => false
+            closePanel = () => false
           }
         })
         const query = window.matchMedia(
@@ -315,6 +341,7 @@ window.__ModuleLoader__.load({
             try { closeDrawer() } catch {}
             try { delete window.__DSH_MOBILE_OPEN_SESSION__ } catch {}
             try { delete window.__DSH_MOBILE_OPEN_PANEL__ } catch {}
+            try { delete window.__DSH_MOBILE_CLOSE_PANEL__ } catch {}
             try { style.remove() } catch {}
             try { delete document.documentElement.dataset.dshMobileUi } catch {}
           })

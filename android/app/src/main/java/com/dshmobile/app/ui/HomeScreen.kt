@@ -836,19 +836,21 @@ private fun clickMobileTarget(view: WebView?, target: String) {
               return false;
             }
             // A fullscreen/right-side Files or Terminal panel must be closed
-            // before the main conversation Chat tab is reachable.
-            var exit = document.querySelector('[aria-label="Exit fullscreen"]');
-            if (exit) exit.click();
-            // Close the active Files/Terminal tab, then collapse the sidebar.
-            var close = document.querySelector('[aria-label="Close"]');
-            if (close) close.click();
-            var collapse = document.querySelector('[aria-label="Collapse right sidebar"]');
-            if (collapse) collapse.click();
-            setTimeout(function() {
-              var collapseAgain = document.querySelector('[aria-label="Collapse right sidebar"]');
-              if (collapseAgain) collapseAgain.click();
-              setTimeout(clickChatTab, 350);
-            }, 300);
+            // before the main conversation Chat tab is reachable. Use the
+            // locale-independent bridge/data attributes; DSH labels are
+            // localized (Chinese on this device).
+            var closeBridge = window.__DSH_MOBILE_CLOSE_PANEL__;
+            var closed = typeof closeBridge === 'function' && closeBridge();
+            if (!closed) {
+              var openPanel = document.querySelector(
+                '[data-sidebar-right-panel][data-sidebar-right-open="true"]'
+              );
+              if (openPanel) {
+                var toggle = document.querySelector('[data-sidebar-right-toggle]');
+                if (toggle) toggle.click();
+              }
+            }
+            setTimeout(clickChatTab, 400);
             return;
           }
           function clickTarget() {
@@ -872,20 +874,24 @@ private fun clickMobileTarget(view: WebView?, target: String) {
             return false;
           }
           function ensureExpanded() {
-            if (!document.querySelector('.mP3x-q_frame[data-rightbar-collapsed]')) return;
-            var expand = document.querySelector('[aria-label="Open right sidebar"]');
+            var openPanel = document.querySelector(
+              '[data-sidebar-right-panel][data-sidebar-right-open="true"]'
+            );
+            if (openPanel) return;
+            var expand = document.querySelector('[data-sidebar-right-expand]') ||
+              document.querySelector('[data-sidebar-right-toggle]') ||
+              document.querySelector('[aria-label="Open right sidebar"]');
             if (expand) expand.click();
           }
           if (clickTarget()) {
             setTimeout(ensureExpanded, 120);
             return;
           }
-          var newTab = document.querySelector('[aria-label="New tab"]');
+          var newTab = document.querySelector('[data-dockkit-add-tab]');
           if (newTab) {
             newTab.click();
           }
-          var open = document.querySelector('[aria-label="Open right sidebar"]');
-          if (open) open.click();
+          ensureExpanded();
           var attempts = 0;
           function retryTarget() {
             if (clickTarget() || ++attempts >= 4) {
