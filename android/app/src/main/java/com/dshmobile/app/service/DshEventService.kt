@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -16,8 +17,10 @@ import androidx.core.app.NotificationCompat
 import com.dshmobile.app.MainActivity
 import com.dshmobile.app.R
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -52,6 +55,8 @@ class DshEventService : Service() {
 
     private var clientId: String? = null
     private var retryCount = 0
+    private var eventSequence = 0
+    private val runningSessions = mutableSetOf<String>()
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -108,6 +113,7 @@ class DshEventService : Service() {
 
         currentBaseUrl = baseUrl
         retryCount = 0
+        runningSessions.clear()
         startForeground(SERVICE_NOTIFICATION_ID, serviceNotification("正在连接 DSH…"))
         connect(baseUrl)
         return START_NOT_STICKY
@@ -115,6 +121,7 @@ class DshEventService : Service() {
 
     override fun onDestroy() {
         currentBaseUrl = null
+        runningSessions.clear()
         handler.removeCallbacksAndMessages(null)
         socket?.close(1000, "service stopped")
         socket = null
@@ -176,14 +183,40 @@ class DshEventService : Service() {
                     "waterfall" -> {
                         val event = item["event"]?.jsonPrimitive?.contentOrNull
                         if (event == "approval/request") {
-                            notifyEvent("需要审批", "DSH 正在等待你的审批")
+                            val sessionId = item["agentId"]?.jsonPrimitive?.contentOrNull
+                            val request = item["request"]?.jsonObject
+                            val tool = request?.get("toolName")?.jsonPrimitive?.contentOrNull
+                            val reason = request?.get("reason")?.jsonPrimitive?.contentOrNull
+                            val message = buildString {
+                                if (!tool.isNullOrBlank()) append("工具 ").append(tool).append(" 等待审批")
+                                else append("DSH 正在等待你的审批")
+                                if (!reason.isNullOrBlank()) append("：").append(reason)
+                            }
+                            notifyEvent("需要审批", message, sessionId)
                         }
                     }
 
                     "emit" -> {
                         val event = item["event"]?.jsonPrimitive?.contentOrNull
-                        if (event == "api-session/error") {
-                            notifyEvent("任务出错", "DSH 会话出现错误")
+                        val args = item["args"]?.jsonArray
+                        when (event) {
+                            "api-session/error" -> {
+                                val sessionId = args?.getOrNull(0)?.jsonPrimitive?.contentOrNull
+                                notifyEvent("任务出错", "DSH 会话出现错误", sessionId)
+                            }
+
+                            "api-session/status" -> {
+                                val sessionId = args?.getOrNull(0)?.jsonPrimitive?.contentOrNull
+                                    ?.takeIf { it.isNotBlank() }
+                                if (sessionId != null) {
+                                    val running = args?.getOrNull(1)?.jsonPrimitive?.booleanOrNull ?: false
+                                    if (running) {
+                                        runningSessions.add(sessionId)
+                                    } else if (runningSessions.remove(sessionId)) {
+                                        notifyEvent("任务完成", "会话已完成，点击查看", sessionId)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -199,11 +232,11 @@ class DshEventService : Service() {
         }
     }
 
-    private fun notifyEvent(title: String, message: String) {
+    private fun notifyEvent(title: String, message: String, sessionId: String? = null) {
         runCatching {
             val manager = getSystemService(NotificationManager::class.java)
-            val id = EVENT_NOTIFICATION_ID + (System.currentTimeMillis() % 1000).toInt()
-            manager.notify(id, eventNotification(title, message))
+            val id = EVENT_NOTIFICATION_ID + (eventSequence++ % 1000)
+            manager.notify(id, eventNotification(title, message, sessionId, id))
         }
     }
 
@@ -237,30 +270,41 @@ class DshEventService : Service() {
             .setContentTitle("DSH Mobile")
             .setContentText(text)
             .setOngoing(true)
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent(null, SERVICE_NOTIFICATION_ID))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
-    private fun eventNotification(title: String, message: String): Notification {
+    private fun eventNotification(
+        title: String,
+        message: String,
+        sessionId: String?,
+        requestCode: Int,
+    ): Notification {
         return NotificationCompat.Builder(this, CHANNEL_EVENTS)
             .setSmallIcon(R.drawable.ic_stat_dsh)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setAutoCancel(true)
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent(sessionId, requestCode))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
     }
 
-    private fun openAppIntent(): PendingIntent {
+    private fun openAppIntent(sessionId: String?, requestCode: Int): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (!sessionId.isNullOrBlank()) {
+                putExtra(MainActivity.EXTRA_SESSION_ID, sessionId)
+                data = Uri.parse("dshmobile://session/${Uri.encode(sessionId)}")
+            }
         }
         return PendingIntent.getActivity(
             this,
-            0,
+            requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

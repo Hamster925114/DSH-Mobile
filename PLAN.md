@@ -303,21 +303,44 @@ location / {
 - `viewport-fit=cover` + 安全区 padding。
 - 终端：原生按键栏（Esc/Tab/Ctrl/Alt/↑↓←→）注入 `keydown`；`windowSoftInputMode=adjustResize`。
 - 长按菜单、复制粘贴、图片预览保持 WebView 原生能力。
-- 平板/横屏：`> 900px` 回到桌面布局。
+- 横屏：紧凑图标底栏、终端按键栏变矮、旋转不重建 WebView；**平板适配按用户要求跳过**。
 
 #### 4.4.2 深链与通知跳转
 
-App 通过 JS 桥调用：
+DSH SPA 没有 URL 路由，`/` 始终是唯一页面，因此深链不能靠改 URL，必须调用 DSH 自己的 `uiWorkspace.openSession(sessionId)`。
+
+实现：
+
+- `@dsh-mobile/client-ui` 用 `ctx.inject(['uiWorkspace'])` 等待服务就绪，暴露
+  `window.__DSH_MOBILE_OPEN_SESSION__(sessionId)`；服务未就绪时返回 `false`，不抛异常。
+- 通知/深链统一使用 DSH 的**完整会话 ID**（形如 `session-<uuid>`），不要再手工去掉 `session-` 前缀。
+- `MainActivity` 声明 `launchMode="singleTop"`，`onNewIntent` 更新待打开 ID；支持：
+  - extra `session_id`
+  - URI `dshmobile://session/<session-id>`
+- WebView 侧最长等待 60 秒（Tailscale 冷启动插件包可能 20–30 秒），桥就绪后调用 `openSession`；失败提示“未能定位到目标会话，请手动打开”。
 
 ```js
-window.DSHMobile.openSession(sessionId)
-window.DSHMobile.openPanel('files' | 'terminal' | 'plugins' | 'settings')
-window.DSHMobile.setConnectionState('connected' | 'reconnecting' | 'offline')
+// client-ui 暴露的桥（实际签名）
+window.__DSH_MOBILE_OPEN_SESSION__(sessionId): boolean
 ```
 
-移动皮肤插件监听这些方法，调用 `ctx.layout` 或会话选择逻辑。没有插件时，App 退化为“打开 App，用户手动点会话”。
+没有插件或桥未就绪时，App 退化为“打开 App，用户手动点会话”。
 
-#### 4.4.3 原生外壳界面
+#### 4.4.3 文件、相机、剪贴板与主题
+
+| 能力 | 实现 |
+|---|---|
+| 文件选择/上传 | `WebChromeClient.onShowFileChooser` → `ACTION_OPEN_DOCUMENT`，支持多选；结果回填 WebView |
+| 拍照上传 | 同一 chooser 附带 `MediaStore.ACTION_IMAGE_CAPTURE` + `EXTRA_OUTPUT`；`FileProvider` 临时 URI；运行时申请 `CAMERA` |
+| 下载保存 | `DownloadListener` 交给系统 `DownloadManager`，API 29+ 写入公共 `Download/` |
+| 下载完成通知 | `DownloadCompleteReceiver` 监听 `DOWNLOAD_COMPLETE`，只对成功项发通知，提供“打开 / 分享” |
+| 分享 | 通知 action `ACTION_SEND`，`FileProvider` 授权临时读 |
+| 剪贴板图片 | 原生底栏“粘贴”读取 `ClipboardManager` 图片 → 缩放/JPEG/Base64 → WebView 构造 `File` + 合成 `ClipboardEvent('paste')` |
+| 主题 | Compose `isSystemInDarkTheme()` 同步状态栏/导航栏图标、WebView 背景色；DSH 自身 `body[data-ds-dark-theme]` 跟随系统 |
+
+> 语音输入按用户要求不做。平板适配按用户要求跳过。
+
+#### 4.4.4 原生外壳界面
 
 | 页面 | 内容 |
 |---|---|
@@ -533,7 +556,7 @@ Cookie: ...
 - [x] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`（含二维码）、`/mobile/hello`。
 - [x] 桌面安装/配置文档。
 
-**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断真机 8/8 通过；22 个 JVM 单元测试通过。前台服务 `$events` 已收到 `ready`；Read Only 会话触发 `waterfall approval/request`，通知栏已收到「需要审批」。文件选择/上传/下载由用户真机确认通过。M2 第一增量：原生底部导航（会话/文件/终端/设置）已真机验证；下一增量是 `@dsh-mobile/client-ui` 桌面皮肤。M1 剩余：一次完整 10 任务流程；LAN/frp 第二条链路已由用户决定舍弃。
+**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断真机 8/8 通过；**27 个 JVM 单元测试通过**（新增深链解析 5 个）。前台服务 `$events` 已收到 `ready`；Read Only 会话触发 `waterfall approval/request`，通知栏已收到「需要审批」。文件选择/上传/下载由用户真机确认通过；本轮补齐文件选择缓存暂存（修复 content URI 授权过期导致的上传失败）、拍照、剪贴板图片、下载完成通知、通知深链和亮/暗主题。`@dsh-mobile/client-ui` 修复移动端中栏 0px 命中区、折叠右栏遮挡和全屏 Sheet；语音输入、平板适配按用户要求不做。M1 剩余：一次完整 10 任务流程；LAN/frp 第二条链路已由用户决定舍弃。
 
 **验收**：在手机上完成 10 个真实任务（新建会话、切工作区、换模型、看文件、开终端、装/禁插件、审批），全程不碰电脑。
 
@@ -545,13 +568,15 @@ Cookie: ...
 - [x] `@dsh-mobile/client-ui` CSS 基础皮肤：全宽会话列、header/composer 留白、隐藏 turn rail、加大菜单触控、移动宽度标记；已热加载到真机。
 - [x] `@dsh-mobile/client-ui` 完整布局 v1：左边缘抽屉、文件/终端全屏 Sheet（真机待最终验收）、安全区细节、平板断点待补。
 - [x] 终端按键栏（Esc/Tab/Enter/Ctrl/Alt/Ctrl+C/方向键，已接入原生底栏）。
-- [ ] 深链：通知点开直达会话/面板。
-- [ ] 文件分享/保存、拍照上传、剪贴板图片。
+- [x] 深链：通知点开直达会话（`singleTop` + `session_id` / `dshmobile://session/<id>` + `uiWorkspace.openSession` 桥）。
+- [x] 文件分享/保存、拍照上传、剪贴板图片（下载完成通知含“打开/分享”）。
 - [x] 断线重连 UI、离线提示、请求超时（系统网络回调 + `/mobile/hello` 5 秒健康探测，实测飞行模式显示、恢复后消失）。
-- [x] 横屏 / 平板适配：横屏紧凑图标底栏、终端按键栏变矮、Activity 旋转不重建 WebView；平板断点/主题细节待补。
-- [ ] 语音输入（可选）。
+- [x] 横屏适配：紧凑图标底栏、终端按键栏变矮、Activity 旋转不重建 WebView。
+- [x] 主题细节：系统亮/暗切换同步状态栏/导航栏图标、WebView 背景色，DSH 主题跟随系统。
+- [ ] 语音输入（用户明确不做）。
+- [ ] 平板适配（用户明确不做）。
 
-**验收**：在手机上连续完成一个 30 分钟的真实编码任务（读文件、改代码、跑测试、审批），无需电脑。
+**验收**：用户已完成一次 30 分钟真实编码任务验收（读文件、改代码、跑测试、审批），本轮按用户要求跳过重复验收。
 
 ### M3 · 安全、设备与稳定性（第 8–9 周）
 

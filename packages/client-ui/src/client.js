@@ -3,6 +3,9 @@ window.__ModuleLoader__.load({
   factory() {
     const STYLE_ID = 'dsh-mobile-client-ui-style'
     const CSS = `
+      html[data-dsh-mobile-ui="1"] {
+        color-scheme: light dark;
+      }
       html[data-dsh-mobile-ui="1"] body {
         overscroll-behavior-y: none;
       }
@@ -58,6 +61,13 @@ window.__ModuleLoader__.load({
          overlay opened from the left edge. */
       html[data-dsh-mobile-ui="1"] .mP3x-q_frame {
         grid-template-columns: 0 minmax(0, 1fr) 0 !important;
+      }
+      /* The fixed sidebar and hidden rightbar leave the center column to
+         auto-placement, where it lands in the 0px first track. Pin it to the
+         real content track so it has a non-zero hit-test box. */
+      html[data-dsh-mobile-ui="1"] .mP3x-q_centerCol {
+        grid-column: 2 !important;
+        grid-row: 1 !important;
       }
       html[data-dsh-mobile-ui="1"] .mP3x-q_sidebarCol {
         position: fixed !important;
@@ -117,6 +127,11 @@ window.__ModuleLoader__.load({
         z-index: 45;
         background: var(--dsw-alias-bg-base, #0d1117);
       }
+      /* DSH keeps the collapsed column in the grid for the desktop rail. On
+         phones it is a full-screen overlay and would otherwise eat every tap. */
+      html[data-dsh-mobile-ui="1"] .mP3x-q_frame[data-rightbar-collapsed] .mP3x-q_rightbarCol {
+        display: none !important;
+      }
 
       @media (max-width: 820px) {
         html[data-dsh-mobile-ui="1"] .an3WzG_titleRow {
@@ -139,8 +154,36 @@ window.__ModuleLoader__.load({
         style.id = STYLE_ID
         style.dataset.plugin = '@dsh-mobile/client-ui'
         style.textContent = CSS
-        document.head.appendChild(style)
+        if (document.head) {
+          document.head.appendChild(style)
+        } else {
+          document.addEventListener(
+            'DOMContentLoaded',
+            () => document.head?.appendChild(style),
+            { once: true }
+          )
+        }
 
+        // Notification deep-link bridge: Android calls this after a tap and
+        // lets DSH's own workspace service perform the navigation. The service
+        // may arrive after this plugin, so wait for it instead of sampling once.
+        let openSession = () => false
+        window.__DSH_MOBILE_OPEN_SESSION__ = (sessionId) => openSession(sessionId)
+        ctx.inject(['uiWorkspace'], (scope) => {
+          const workspace = scope.uiWorkspace
+          openSession = (sessionId) => {
+            try {
+              if (!workspace || typeof workspace.openSession !== 'function') return false
+              workspace.openSession(sessionId)
+              return true
+            } catch (error) {
+              return false
+            }
+          }
+          return () => {
+            openSession = () => false
+          }
+        })
         const query = window.matchMedia(
           '(max-width: 820px), (max-height: 500px) and (pointer: coarse)'
         )
@@ -217,6 +260,7 @@ window.__ModuleLoader__.load({
             try { handle.remove() } catch {}
             try { backdrop.remove() } catch {}
             try { closeDrawer() } catch {}
+            try { delete window.__DSH_MOBILE_OPEN_SESSION__ } catch {}
             try { style.remove() } catch {}
             try { delete document.documentElement.dataset.dshMobileUi } catch {}
           })

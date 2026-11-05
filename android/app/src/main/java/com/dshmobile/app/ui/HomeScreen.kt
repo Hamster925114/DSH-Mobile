@@ -2,18 +2,25 @@ package com.dshmobile.app.ui
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.DownloadManager
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
+import android.provider.OpenableColumns
+import android.util.Base64
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
@@ -31,6 +38,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +56,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -65,6 +74,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -76,12 +86,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.dshmobile.app.data.DshApi
 import com.dshmobile.app.service.DshEventService
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -95,8 +110,12 @@ fun HomeScreen(
     onManageConnections: () -> Unit,
     onUnpair: () -> Unit,
     onRefresh: () -> Unit,
+    openSessionId: String? = null,
+    onOpenSessionHandled: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val darkTheme = isSystemInDarkTheme()
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var terminalMode by rememberSaveable { mutableStateOf(false) }
@@ -112,11 +131,75 @@ fun HomeScreen(
     var fileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val currentBaseUrl by rememberUpdatedState(baseUrl)
 
-    val fileLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent(),
-    ) { uri ->
-        fileCallback?.onReceiveValue(uri?.let { arrayOf(it) })
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingFileChooser by remember { mutableStateOf(false) }
+
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uris = mutableListOf<Uri>()
+        val data = result.data
+        data?.clipData?.let { clip ->
+            for (index in 0 until clip.itemCount) {
+                clip.getItemAt(index)?.uri?.let { uris.add(it) }
+            }
+        }
+        data?.data?.let { uris.add(it) }
+        if (uris.isEmpty() && result.resultCode == Activity.RESULT_OK) {
+            cameraUri?.let { uris.add(it) }
+        }
+        val staged = uris.mapNotNull { uri ->
+            runCatching { stageForWebView(context, uri) }.getOrNull()
+        }
+        fileCallback?.onReceiveValue(staged.takeIf { it.isNotEmpty() }?.toTypedArray())
         fileCallback = null
+        cameraUri = null
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            pendingFileChooser = true
+        } else {
+            fileCallback?.onReceiveValue(null)
+            fileCallback = null
+            Toast.makeText(context, "需要相机权限才能拍照上传", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openFileChooser() {
+        val cameraFile = File(context.cacheDir, "shared").apply { mkdirs() }
+            .resolve("camera-${System.currentTimeMillis()}.jpg")
+        val captureUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            cameraFile,
+        )
+        cameraUri = captureUri
+
+        val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        val camera = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, captureUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(picker, "选择文件或拍照").apply {
+            if (camera.resolveActivity(context.packageManager) != null) {
+                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(camera))
+            }
+        }
+        fileChooserLauncher.launch(chooser)
+    }
+
+    LaunchedEffect(pendingFileChooser) {
+        if (pendingFileChooser) {
+            pendingFileChooser = false
+            openFileChooser()
+        }
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -130,6 +213,7 @@ fun HomeScreen(
             WebView.setWebContentsDebuggingEnabled(true)
         }
         WebView(context).apply {
+            setBackgroundColor(if (darkTheme) 0xFF151517.toInt() else 0xFFF7F8FA.toInt())
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.setDatabaseEnabled(true)
@@ -205,7 +289,15 @@ fun HomeScreen(
                     if (filePathCallback == null) return false
                     fileCallback?.onReceiveValue(null)
                     fileCallback = filePathCallback
-                    fileLauncher.launch("*/*")
+                    if (ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.CAMERA,
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        openFileChooser()
+                    } else {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
                     return true
                 }
             })
@@ -311,10 +403,46 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(darkTheme) {
+        webView.setBackgroundColor(if (darkTheme) 0xFF151517.toInt() else 0xFFF7F8FA.toInt())
+    }
+
     LaunchedEffect(baseUrl) {
         loading = true
         pageError = null
         webView.loadUrl("$baseUrl/")
+    }
+
+    LaunchedEffect(openSessionId) {
+        val sessionId = openSessionId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return@LaunchedEffect
+        val quoted = JSONObject.quote(sessionId)
+        val script = """
+            (function() {
+              try {
+                if (typeof window.__DSH_MOBILE_OPEN_SESSION__ !== 'function') return false;
+                window.__DSH_MOBILE_OPEN_SESSION__($quoted);
+                return true;
+              } catch (error) {
+                return false;
+              }
+            })();
+        """.trimIndent()
+        // The Tailscale page can take 20–30s to boot its plugin bundle.
+        // Keep trying until the DSH workspace bridge is ready.
+        repeat(120) {
+            var handled = false
+            webView.evaluateJavascript(script) { result ->
+                handled = result == "true"
+            }
+            delay(500)
+            if (handled) {
+                onOpenSessionHandled()
+                return@LaunchedEffect
+            }
+        }
+        Toast.makeText(context, "未能定位到目标会话，请手动打开", Toast.LENGTH_SHORT).show()
+        onOpenSessionHandled()
     }
 
     LaunchedEffect(notificationsEnabled, baseUrl) {
@@ -452,6 +580,19 @@ fun HomeScreen(
                 terminalMode = true
                 clickMobileTarget(webView, "terminal")
             },
+            onPasteImage = {
+                terminalMode = false
+                clickMobileTarget(webView, "chat")
+                scope.launch {
+                    delay(250)
+                    val pasted = pasteClipboardImage(context, webView)
+                    Toast.makeText(
+                        context,
+                        if (pasted) "已粘贴剪贴板图片" else "剪贴板里没有图片",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
             onSettings = {
                 terminalMode = false
                 showSettings = true
@@ -574,6 +715,7 @@ private fun MobileBottomBar(
     onChat: () -> Unit,
     onFiles: () -> Unit,
     onTerminal: () -> Unit,
+    onPasteImage: () -> Unit,
     onSettings: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp) {
@@ -602,6 +744,13 @@ private fun MobileBottomBar(
                 label = "终端",
                 compact = compact,
                 onClick = onTerminal,
+                modifier = Modifier.weight(1f),
+            )
+            MobileNavItem(
+                icon = Icons.Default.ContentPaste,
+                label = "粘贴",
+                compact = compact,
+                onClick = onPasteImage,
                 modifier = Modifier.weight(1f),
             )
             MobileNavItem(
@@ -834,6 +983,7 @@ private fun logWebViewDiagnostics(view: WebView?) {
 private fun injectMobileCss(view: WebView?) {
     val script = """
         (function() {
+          if (!document.body) return;
           if (document.getElementById('dsh-mobile-css')) return;
           var style = document.createElement('style');
           style.id = 'dsh-mobile-css';
@@ -921,7 +1071,7 @@ private fun injectMobileCss(view: WebView?) {
             ::-webkit-scrollbar { width: 0; height: 0; }
             textarea, input { font-size: 16px !important; }
           `;
-          document.head.appendChild(style);
+          if (document.head) document.head.appendChild(style);
 
           function fitShell() {
             var h = window.innerHeight + 'px';
@@ -1046,4 +1196,124 @@ private fun injectMobileCss(view: WebView?) {
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
+}
+
+/**
+ * WebView can read content:// URIs directly, but some providers only grant a
+ * short-lived read and the DSH uploader reads the File after the picker task
+ * has gone. Stage a stable copy in our own cache and hand back a FileProvider
+ * URI so the upload cannot lose its grant mid-flight.
+ */
+private fun stageForWebView(context: Context, uri: Uri): Uri {
+    if (uri.authority == "${context.packageName}.fileprovider") return uri
+    val displayName = runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
+    val safeName = (displayName ?: "upload-${System.currentTimeMillis()}")
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        .take(80)
+        .ifBlank { "upload" }
+    val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+    val target = File(dir, safeName).let { candidate ->
+        if (candidate.exists()) {
+            File(dir, "${System.currentTimeMillis()}-$safeName")
+        } else {
+            candidate
+        }
+    }
+    return runCatching {
+        val input = context.contentResolver.openInputStream(uri) ?: return uri
+        input.use { source ->
+            target.outputStream().use { sink -> source.copyTo(sink) }
+        }
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
+    }.getOrElse {
+        target.delete()
+        uri
+    }
+}
+
+private suspend fun pasteClipboardImage(context: Context, webView: WebView): Boolean {
+    val base64 = withContext(Dispatchers.IO) {
+        runCatching {
+            val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return@runCatching null
+            val clip = clipboard.primaryClip ?: return@runCatching null
+            val uri = (0 until clip.itemCount)
+                .mapNotNull { clip.getItemAt(it).uri }
+                .firstOrNull { candidate ->
+                    val type = context.contentResolver.getType(candidate)
+                    type == null || type.startsWith("image/")
+                } ?: return@runCatching null
+
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+            var sample = 1
+            while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) {
+                sample *= 2
+            }
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            val decoded = context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            } ?: return@runCatching null
+            val bitmap = if (decoded.width > 1600 || decoded.height > 1600) {
+                val scale = minOf(1600f / decoded.width, 1600f / decoded.height)
+                Bitmap.createScaledBitmap(
+                    decoded,
+                    (decoded.width * scale).toInt().coerceAtLeast(1),
+                    (decoded.height * scale).toInt().coerceAtLeast(1),
+                    true,
+                ).also { if (it !== decoded) decoded.recycle() }
+            } else {
+                decoded
+            }
+            val output = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)
+            bitmap.recycle()
+            Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+        }.getOrNull()
+    } ?: return false
+
+    val script = """
+        (function() {
+          try {
+            const binary = atob('$base64');
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+            const file = new File([bytes], 'clipboard.jpg', { type: 'image/jpeg' });
+            const transfer = new DataTransfer();
+            transfer.items.add(file);
+            const target = document.querySelector('[contenteditable="true"]') ||
+              document.querySelector('.GRgSLq_input');
+            if (!target) return false;
+            target.focus();
+            target.dispatchEvent(new ClipboardEvent('paste', {
+              clipboardData: transfer,
+              bubbles: true,
+              cancelable: true
+            }));
+            return true;
+          } catch (error) {
+            return false;
+          }
+        })();
+    """.trimIndent()
+
+    var handled = false
+    withContext(Dispatchers.Main) {
+        webView.evaluateJavascript(script) { result -> handled = result == "true" }
+        delay(250)
+    }
+    return handled
 }

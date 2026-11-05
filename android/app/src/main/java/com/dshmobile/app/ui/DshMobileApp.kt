@@ -19,7 +19,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun DshMobileApp(viewModel: MainViewModel = viewModel()) {
+fun DshMobileApp(
+    openSessionId: String? = null,
+    onOpenSessionHandled: () -> Unit = {},
+    viewModel: MainViewModel = viewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
@@ -66,6 +70,8 @@ fun DshMobileApp(viewModel: MainViewModel = viewModel()) {
                 onManageConnections = { showConnections = true },
                 onUnpair = viewModel::unpair,
                 onRefresh = { viewModel.refreshSessionCount(current.baseUrl) },
+                openSessionId = openSessionId,
+                onOpenSessionHandled = onOpenSessionHandled,
             )
         }
     }

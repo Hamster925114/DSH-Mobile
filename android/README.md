@@ -129,17 +129,21 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | 认证 | 一次性码换 token URL、抓 `Set-Cookie`、CookieManager 持久化、`/mobile/hello` 校验 |
 | 连接管理 | 局域网 / Tailscale / frp + VPS 三个槽位，添加/编辑/删除/测试/诊断/切换，DataStore 持久化 |
 | 连接诊断 | DNS → TCP → TLS → HTTP(bridge) → Cookie → API → WebSocket 全链路；失败项给出 Tailscale/frp/Host/Cookie 修复建议 |
-| 主页 | WebView 加载 `{base}/`，JS/DOM storage、Cookie、文件选择、下载、外链跳浏览器、返回键 |
+| 主页 | WebView 加载 `{base}/`，JS/DOM storage、Cookie、文件选择、拍照、下载、外链跳浏览器、返回键 |
 | 移动适配 | 注入基础 CSS（隐藏滚动条、输入框 16px 防 iOS 缩放、safe-area） |
 | 设置 | 当前连接、刷新会话数、重新加载、连接管理（含诊断入口）、清除配对 |
 | M2 底部导航 | 会话 / 文件 / 终端 / 设置，调用 WebView 现有入口 |
 | M2 终端按键栏 | Esc / Tab / Enter / Ctrl / Alt / Ctrl+C / 方向键，点击后发送到 xterm |
 | M2 离线提示 | 系统网络 + DSH `/mobile/hello` 健康探测；断线顶部横幅，恢复后自动重载 |
-| M2 客户端皮肤 | `@dsh-mobile/client-ui` CSS 基础版：全宽会话列、移动留白、隐藏 turn rail、触控尺寸 |
+| M2 客户端皮肤 | `@dsh-mobile/client-ui`：全宽会话列、中栏固定到内容轨道（修复 0px 命中区）、折叠右栏隐藏、全屏 Sheet、移动留白、触控尺寸 |
 | M2 横屏 | 紧凑图标底栏、矮终端按键栏、旋转不重建 WebView |
-| 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
-| 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
-| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics` 共 22 个 JVM 单元测试 |
+| M2 深链 | 通知携带 `session_id` / `dshmobile://session/<id>`；`singleTop` + `onNewIntent`；`client-ui` 暴露 `uiWorkspace.openSession` 桥 |
+| M2 文件 | 文件选择多选 + 拍照；选中文件先复制到 App 缓存并由 `FileProvider` 提供稳定 URI，避免 content URI 授权过期导致上传失败；下载完成通知含“打开/分享” |
+| M2 剪贴板 | 底栏“粘贴”把剪贴板图片转 JPEG/Base64，合成 `ClipboardEvent` 填入 DSH 输入框 |
+| M2 主题 | 系统亮/暗同步状态栏/导航栏图标、WebView 背景色；DSH 主题跟随系统 |
+| 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误/完成本地通知 |
+| 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型；下载完成独立渠道 |
+| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试 |
 
 ### 3.1 明确不做（M1）
 
@@ -158,13 +162,15 @@ app/src/main/java/com/dshmobile/app/
   DshApplication.kt
   data/
     DshUrl.kt                  # base URL 归一化/校验
+    SessionLink.kt             # 通知/深链会话 ID 解析与归一化
     PairingPayload.kt          # 二维码/深链 JSON 解析
     ConnectionProfile.kt       # 连接槽位（LAN/Tailscale/frp/CUSTOM）
     SettingsRepository.kt      # DataStore：连接列表、当前连接、通知开关
     DshApi.kt                  # 配对、Cookie、hello、session/list RPC
     ConnectionDiagnostics.kt   # DNS/TCP/TLS/HTTP/Cookie/API/WebSocket 诊断
   service/
-    DshEventService.kt         # 前台 $events WebSocket + 通知
+    DshEventService.kt         # 前台 $events WebSocket + 审批/错误/完成通知
+    DownloadCompleteReceiver.kt # 下载完成通知（打开/分享）
   ui/
     DshMobileApp.kt            # Loading / Pairing / Home 状态机
     MainViewModel.kt           # 配对、连接切换、恢复、退出、会话数
@@ -200,7 +206,11 @@ app/src/main/java/com/dshmobile/app/
 - [x] 下载文件能进系统下载目录。
 - [x] 杀 App 重开，仍保持登录（30 天 Cookie）。
 - [ ] 设置里“清除配对”后回到配对页，旧 Cookie 不再可用。
-- [x] 开启“后台事件通知”后，前台服务通知常驻；审批/错误能收到本地通知。
+- [x] 开启“后台事件通知”后，前台服务通知常驻；审批/错误/完成能收到本地通知。
+- [x] 点审批/完成通知能直达对应会话（`singleTop` + `openSession` 桥）。
+- [x] 文件选择支持多选和拍照；下载完成通知可打开/分享。
+- [x] 剪贴板图片可粘贴进 DSH 输入框。
+- [x] 系统亮/暗切换时状态栏、导航栏、WebView 背景和 DSH 主题同步。
 - [ ] 连续完成 10 个真实任务，不需要碰电脑。
 
 ---
@@ -211,6 +221,8 @@ app/src/main/java/com/dshmobile/app/
 - **明文 HTTP**：`usesCleartextTraffic="true"` 仅为局域网调试；Tailscale/frp 应使用 HTTPS，正式版应移除。
 - **前台服务**：Android 15 对 `dataSync` 有 6 小时/天的限制；App 被强停或系统回收后不会收到事件。这是产品决策，不是 bug。
 - **WebSocket 401**：当前实现会提示并停止重连；重新配对后再开启通知。
+- **深链冷启动慢**：Tailscale 首次加载 DSH 插件包可能 20–30 秒；App 会最多等 60 秒，超时提示手动打开。
+- **剪贴板只支持图片**：文本仍用系统粘贴；图片走合成 `ClipboardEvent`，若 DSH 前端改版可能需要更新选择器。
 - **无 GMS**：不依赖 FCM，因此没有真正的离线推送。
 
 ---
@@ -230,5 +242,8 @@ app/src/main/java/com/dshmobile/app/
 | 配对页 404 | 配对页只允许本机访问；用电脑打开 `http://<bind-ip>:53985/mobile/pair` |
 | `127.0.0.1 拒绝连接` / `ERR_CONNECTION_REFUSED` | DSH 重启后端口变了，但 Tailscale Serve 仍指旧端口；`tailscale serve status` 确认，再执行 `tailscale serve --bg http://127.0.0.1:53985` |
 | WebView 白屏 | 设置里“重新加载”；看 logcat 的 `chromium` / `DshApi` |
+| 文件显示“上传失败” | 重新选择文件；当前版本会先缓存到 App 的 `shared/` 再上传。若仍失败，看 logcat 的 `DshEventService` / DSH 连接是否反复 `connection lost` |
+| 点通知没进对应会话 | 确认 DSH 页面已启动且 `@dsh-mobile/client-ui` 已加载；深链最多等 60 秒，超时会提示手动打开 |
+| 亮/暗切换后颜色不更新 | 系统是否切换了深色模式；DSH 主题设为“跟随系统”；必要时重新加载 WebView |
 | 通知不出现 | Android 13+ 通知权限；设置里开关；`dsh_events` 渠道 |
 | 扫码没反应 | 相机权限；模拟器无相机时用手动输入 |
