@@ -413,6 +413,14 @@ private fun injectMobileCss(view: WebView?) {
               max-height: calc(100% - 96px) !important;
               overflow-y: auto !important;
             }
+            /* ask-user-question composer card: max-height:min(60vh,520px)
+               also becomes 0 in this WebView. */
+            .wnLwla_card {
+              max-height: 520px !important;
+            }
+            @media (max-height: 620px) {
+              .wnLwla_card { max-height: 300px !important; }
+            }
             /* DSH settings on a phone: stack nav above content instead of
                squeezing the 800px desktop panel into 372px. */
             @media (max-width: 700px) {
@@ -517,7 +525,7 @@ private fun injectMobileCss(view: WebView?) {
              present but zero-height before its content is painted. */
           function fitQuestionOverlay() {
             var overlays = document.querySelectorAll(
-              '[data-conversation-composer-overlay], [class*="M4PAiq"], [class*="Fu0XRq"]'
+              '[data-conversation-composer-overlay], .wnLwla_card, [class*="M4PAiq"], [class*="Fu0XRq"]'
             );
             overlays.forEach(function(el) {
               if (el.dataset.dshMobileQuestionFixed === '1') return;
