@@ -13,26 +13,28 @@ Kotlin + Jetpack Compose 外壳，WebView 加载桌面 DSH 的 Web GUI，原生�
 
 ## 1. 在 Android Studio 中打开
 
-本仓库**不要求**命令行安装 JDK/Android SDK；用 Android Studio 自带的 JDK 17 和 SDK Manager 即可。
+本仓库需要 **JDK 17 或 21**。不要用 Android Studio 自带的 JDK 25：Gradle 8.11.1 的 Kotlin DSL 不识别 Java 25，会报 `IllegalArgumentException: 25.0.4`。
 
 1. Android Studio（Ladybug 或更新）→ **Open**。
 2. 选择 `D:\project\DSH-Mobile\android`（不是仓库根目录）。
-3. 等待 Gradle Sync。首次会下载 Gradle 8.11.1 和依赖。
-4. SDK Manager 确认已安装 **Android SDK Platform 35**、**Build-Tools 35.x**。
-5. 连接手机（Android 8.0+，开启 USB 调试）或建一个 API 35 模拟器。
-6. Run `app`。
+3. **Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK** 选择 17 或 21；没有就点 **Download JDK** 下载 Temurin 17。
+4. 等待 Gradle Sync。首次会下载 Gradle 8.11.1 和依赖。
+5. SDK Manager 确认已安装 **Android SDK Platform 35**、**Build-Tools 35.x**。
+6. 连接手机（Android 8.0+，开启 USB 调试）或建一个 API 35 模拟器。
+7. Run `app`。
 
 命令行（可选，需本机已有 JDK 17 + SDK 35）：
 
 ```powershell
 cd D:\project\DSH-Mobile\android
+$env:JAVA_HOME = 'D:\apps\jdk-17\jdk-17.0.20.1+1'
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:testDebugUnitTest
 ```
 
 APK 输出：`app\build\outputs\apk\debug\app-debug.apk`。
 
-> 本仓库的 `gradle-wrapper.jar` 来自 Gradle v8.11.1，已校验 zip 完整；若公司网络拦截 `services.gradle.org`，在 Android Studio 的 Gradle 设置里改用本地 Gradle 8.11.1。
+> 国内网络下 `services.gradle.org` / `github.com` 经常超时。`settings.gradle.kts` 已把阿里云 Maven 镜像放在最前面；Gradle 发行版可用腾讯镜像 `https://mirrors.cloud.tencent.com/gradle/gradle-8.11.1-bin.zip`。Android Studio Sync 报 `Could not get resource ... gradle-8.11.1-src.zip` 只是源码包下载失败，不影响命令行构建。
 
 ---
 
