@@ -136,6 +136,11 @@ fun HomeScreen(
                     loading = false
                     canGoBack = view?.canGoBack() == true
                     injectMobileCss(view)
+                    Log.i(
+                        "DSHMobileWeb",
+                        "page_finished url=$url cookie_len=${CookieManager.getInstance().getCookie(baseUrl)?.length ?: 0}",
+                    )
+                    logWebViewDiagnostics(view)
                 }
 
                 override fun onReceivedError(
@@ -335,6 +340,48 @@ fun HomeScreen(
     }
 }
 
+private fun logWebViewDiagnostics(view: WebView?) {
+    val script = """
+        (function() {
+          function snap(label) {
+            try {
+              var q = function(s) { return document.querySelector(s); };
+              var layer = q('.fz3-layer');
+              var screen = q('.fz3-screen');
+              var frame = q('[class*="_frame"]');
+              var sidebar = q('[class*="_sidebarCol"]');
+              var center = q('[class*="_centerCol"]');
+              var root = document.getElementById('root');
+              console.log('DSH_MOBILE_DIAG ' + label + ' ' + JSON.stringify({
+                href: location.href,
+                ready: document.readyState,
+                inner: [innerWidth, innerHeight, devicePixelRatio],
+                phase: layer && layer.getAttribute('data-phase'),
+                screenOpacity: screen && getComputedStyle(screen).opacity,
+                screenDisplay: screen && getComputedStyle(screen).display,
+                frame: frame && frame.getBoundingClientRect().toJSON(),
+                sidebar: sidebar && sidebar.getBoundingClientRect().toJSON(),
+                center: center && center.getBoundingClientRect().toJSON(),
+                rootChildren: root && root.children.length,
+                shell: {
+                  html: document.documentElement.getBoundingClientRect().height,
+                  body: document.body.getBoundingClientRect().height,
+                  root: root && root.getBoundingClientRect().height
+                },
+                afterZ: getComputedStyle(document.body, '::after').zIndex,
+                text: (document.body.innerText || '').slice(0, 300)
+              }));
+            } catch (e) {
+              console.log('DSH_MOBILE_DIAG ' + label + ' ERROR ' + e);
+            }
+          }
+          setTimeout(function() { snap('5s'); }, 5000);
+          setTimeout(function() { snap('12s'); }, 12000);
+        })();
+    """.trimIndent()
+    view?.evaluateJavascript(script, null)
+}
+
 private fun injectMobileCss(view: WebView?) {
     val script = """
         (function() {
@@ -343,7 +390,14 @@ private fun injectMobileCss(view: WebView?) {
           style.id = 'dsh-mobile-css';
           style.textContent = `
             html, body { overscroll-behavior-y: none; }
-            body { padding-bottom: env(safe-area-inset-bottom); }
+            /* Android WebView may resolve the SPA's height:100% against a
+               zero-height root. Give the shell an explicit viewport height. */
+            html, body, #root {
+              height: 100% !important;
+              min-height: 100% !important;
+            }
+            #root { min-height: 100dvh !important; }
+            body { padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
             /* Fairy-style skins paint body::after at z-index:0, which can cover the
                DSH WebView on Android. Keep decorative layers behind the app. */
             body::before { z-index: -2 !important; }
