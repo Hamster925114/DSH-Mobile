@@ -460,14 +460,32 @@ private fun clickMobileTarget(view: WebView?, target: String) {
             return false;
           }
           if (wanted === 'chat') {
-            var tabs = document.querySelectorAll('[role="tab"]');
-            for (var i = 0; i < tabs.length; i++) {
-              if ((tabs[i].innerText || '').trim() === 'Chat') {
-                tabs[i].click();
-                return;
+            function clickChatTab() {
+              var buttons = document.querySelectorAll('button');
+              for (var i = 0; i < buttons.length; i++) {
+                var text = (buttons[i].innerText || '').trim();
+                var rect = buttons[i].getBoundingClientRect();
+                if (text === 'Chat' && rect.width > 0 && rect.height > 0) {
+                  buttons[i].click();
+                  return true;
+                }
               }
+              return false;
             }
-            if (tabs.length > 0) tabs[0].click();
+            // A fullscreen/right-side Files or Terminal panel must be closed
+            // before the main conversation Chat tab is reachable.
+            var exit = document.querySelector('[aria-label="Exit fullscreen"]');
+            if (exit) exit.click();
+            // Close the active Files/Terminal tab, then collapse the sidebar.
+            var close = document.querySelector('[aria-label="Close"]');
+            if (close) close.click();
+            var collapse = document.querySelector('[aria-label="Collapse right sidebar"]');
+            if (collapse) collapse.click();
+            setTimeout(function() {
+              var collapseAgain = document.querySelector('[aria-label="Collapse right sidebar"]');
+              if (collapseAgain) collapseAgain.click();
+              setTimeout(clickChatTab, 350);
+            }, 300);
             return;
           }
           function clickTarget() {
