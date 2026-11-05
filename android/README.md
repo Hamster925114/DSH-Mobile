@@ -144,6 +144,8 @@ app/src/main/java/com/dshmobile/app/
 
 ## 5. M1 验收清单
 
+真机结果见 [docs/m1-acceptance.md](../docs/m1-acceptance.md)。
+
 - [x] Android Studio 能 Sync，`assembleDebug` 成功。
 - [ ] 局域网 / Tailscale / frp + VPS 至少两条链路可用（Tailscale 已通）。
 - [x] 桌面 `/mobile/pair` 为每种连接显示二维码；App 扫码成功（Tailscale）。
