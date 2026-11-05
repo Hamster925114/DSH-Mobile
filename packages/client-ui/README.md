@@ -9,7 +9,9 @@ DSH Web 客户端的**手机移动皮肤**，由 DSH Mobile 的 WebView 加载�
 - 隐藏桌面 turn rail
 - 加大菜单行和触控目标
 - 限制菜单最大宽度
-- 标记 `html[data-dsh-mobile-ui="1"]`，方便后续加抽屉 / Sheet
+- 56px 左侧 rail 改为左边缘滑出的抽屉
+- 文件/终端右侧栏改为手机全屏 Sheet
+- 标记 `html[data-dsh-mobile-ui="1"]`，方便后续继续扩展
 
 ## 安装
 
