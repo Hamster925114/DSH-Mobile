@@ -24,3 +24,6 @@ Thumbs.db
 # Local backups / logs
 *.bak-*
 *.log
+
+# Local diagnostics
+.tmp/

@@ -5,10 +5,13 @@ import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -92,6 +95,9 @@ fun HomeScreen(
     }
 
     val webView = remember {
+        if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -145,6 +151,16 @@ fun HomeScreen(
             })
 
             setWebChromeClient(object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                    if (consoleMessage != null) {
+                        Log.i(
+                            "DSHMobileWeb",
+                            "${consoleMessage.messageLevel()} ${consoleMessage.message()} @ ${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}",
+                        )
+                    }
+                    return true
+                }
+
                 override fun onShowFileChooser(
                     webView: WebView?,
                     filePathCallback: ValueCallback<Array<Uri>>?,
@@ -328,6 +344,13 @@ private fun injectMobileCss(view: WebView?) {
           style.textContent = `
             html, body { overscroll-behavior-y: none; }
             body { padding-bottom: env(safe-area-inset-bottom); }
+            /* Fairy-style skins paint body::after at z-index:0, which can cover the
+               DSH WebView on Android. Keep decorative layers behind the app. */
+            body::before { z-index: -2 !important; }
+            body::after { z-index: -1 !important; }
+            /* Once the skin reaches its dock phase, make sure its full-screen
+               stage cannot keep covering the app if a WebView transition stalls. */
+            .fz3-layer[data-phase="dock"] .fz3-screen { display: none !important; }
             * { -webkit-tap-highlight-color: transparent; }
             ::-webkit-scrollbar { width: 0; height: 0; }
             textarea, input { font-size: 16px !important; }
