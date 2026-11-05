@@ -158,7 +158,7 @@ Cookie 同时供 WebView 和 OkHttp 使用；设备令牌额外保存在 Android
 | M3 设备管理 | App 设置 → 设备管理：列表/撤销；桌面 `devices.json` 只存 SHA-256；撤销后下一次请求立即 401 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误/完成本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型；下载完成独立渠道 |
-| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试；bridge 23 个 Node 测试（含设备令牌与代理门禁） |
+| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试；bridge 24 个 Node 测试（含设备令牌与代理门禁） |
 
 ### 3.1 明确不做（M1）
 
