@@ -421,6 +421,30 @@ private fun injectMobileCss(view: WebView?) {
             @media (max-height: 620px) {
               .wnLwla_card { max-height: 300px !important; }
             }
+            /* Other DSH popup/menu/confirmation surfaces that also use 100vh. */
+            .Ag-ohG_menu,
+            .Luqt-a_menu,
+            .rezYhW_menu,
+            .eze_pW_panel,
+            .olCj9W_zoneMenu,
+            .St8tea_dialog,
+            ._confirmation_cjd8z_1,
+            ._scrollable_4ub78_19,
+            .js5r2G_scrollable {
+              max-height: 520px !important;
+              overflow-y: auto !important;
+            }
+            @media (max-height: 620px) {
+              .Ag-ohG_menu,
+              .Luqt-a_menu,
+              .rezYhW_menu,
+              .eze_pW_panel,
+              .olCj9W_zoneMenu,
+              .St8tea_dialog,
+              ._confirmation_cjd8z_1 {
+                max-height: 300px !important;
+              }
+            }
             /* DSH settings on a phone: stack nav above content instead of
                squeezing the 800px desktop panel into 372px. */
             @media (max-width: 700px) {
@@ -542,6 +566,34 @@ private fun injectMobileCss(view: WebView?) {
           window.addEventListener('resize', fitQuestionOverlay);
           setInterval(fitQuestionOverlay, 300);
           new MutationObserver(fitQuestionOverlay).observe(document.body, { childList: true, subtree: true });
+
+          /* Last-resort sweep: any visible fixed/absolute popup with text but
+             zero height is almost certainly a 100vh collapse. */
+          function fitCollapsedPopups() {
+            var maxH = Math.min(520, window.innerHeight - 96);
+            document.querySelectorAll(
+              '[class*="_menu"], [class*="_Menu"], [class*="Menu"], ' +
+              '[class*="_panel"], [class*="_popover"], [class*="_dialog"], ' +
+              '[class*="_confirmation"], [role="menu"]'
+            ).forEach(function(el) {
+              if (el.dataset.dshMobilePopupFixed === '1') return;
+              var cs = getComputedStyle(el);
+              if (cs.display === 'none' || cs.visibility === 'hidden') return;
+              if (cs.position !== 'fixed' && cs.position !== 'absolute') return;
+              var rect = el.getBoundingClientRect();
+              if (rect.width < 80 || rect.height > 20) return;
+              if (!(el.innerText || '').trim()) return;
+              if (parseFloat(cs.maxHeight) !== 0 && parseFloat(cs.height) !== 0) return;
+              el.dataset.dshMobilePopupFixed = '1';
+              el.style.setProperty('min-height', '60px', 'important');
+              el.style.setProperty('max-height', maxH + 'px', 'important');
+              el.style.setProperty('overflow-y', 'auto', 'important');
+            });
+          }
+          fitCollapsedPopups();
+          window.addEventListener('resize', fitCollapsedPopups);
+          setInterval(fitCollapsedPopups, 300);
+          new MutationObserver(fitCollapsedPopups).observe(document.body, { childList: true, subtree: true });
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
