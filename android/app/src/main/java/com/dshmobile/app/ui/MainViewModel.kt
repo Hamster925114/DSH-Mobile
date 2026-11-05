@@ -88,6 +88,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Retry the saved active profile without asking for a pairing code again.
+     * Useful when Tailscale is still coming up at app launch; the 30-day
+     * Cookie is still valid even though the first probe timed out.
+     */
+    fun retryActiveConnection() {
+        viewModelScope.launch {
+            val settings = settingsRepository.settings.first()
+            val profile = settings.activeProfile ?: return@launch
+            if (profile.baseUrl.isBlank()) return@launch
+            connectTo(profile)
+        }
+    }
+
     /** Switch the active saved endpoint and reload the WebView against it. */
     fun activateProfile(id: String) {
         viewModelScope.launch {
@@ -293,7 +307,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure { error ->
                     _state.value = AppState.NeedsPairing(
-                        message = error.message ?: "连接失败，请重新配对",
+                        message = "连接暂时失败：${error.message ?: "网络不可达"}。确认 Tailscale 已连接后点「重试已保存连接」，不需要重新扫码；如果服务器返回 401 才需要重新配对。",
                         suggestedBaseUrl = target.baseUrl,
                         profileId = target.id,
                         profileLabel = target.label,

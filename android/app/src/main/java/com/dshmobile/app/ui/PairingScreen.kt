@@ -55,6 +55,7 @@ fun PairingScreen(
     profiles: List<ConnectionProfile>,
     onSelectProfile: (id: String, baseUrlOverride: String?) -> Unit,
     onPair: (baseUrl: String, code: String) -> Unit,
+    onRetry: () -> Unit,
     onManageConnections: () -> Unit,
 ) {
     var baseUrl by rememberSaveable(profileId) { mutableStateOf(initialBaseUrl) }
@@ -222,6 +223,21 @@ fun PairingScreen(
                     Spacer(Modifier.size(8.dp))
                     Text("扫码")
                 }
+            }
+
+            if (initialBaseUrl.isNotBlank()) {
+                OutlinedButton(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !busy,
+                ) {
+                    Text("重试已保存连接（无需扫码）")
+                }
+                Text(
+                    text = "先确认手机 Tailscale 已连接，再点重试。只有 Cookie 失效（401）才需要重新配对。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             OutlinedButton(

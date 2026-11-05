@@ -52,6 +52,7 @@ fun DshMobileApp(viewModel: MainViewModel = viewModel()) {
                 profiles = profiles,
                 onSelectProfile = { id, baseUrl -> viewModel.selectProfileForPairing(id, baseUrl) },
                 onPair = viewModel::pair,
+                onRetry = viewModel::retryActiveConnection,
                 onManageConnections = { showConnections = true },
             )
 
