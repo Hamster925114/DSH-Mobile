@@ -505,17 +505,18 @@ Cookie: ...
 
 - [x] bridge 插件：启动时把 `ctx.connection.authenticatedUrl()` 写入 `pairing.json`，并提供 `/mobile/pair`、`/mobile/hello`。
 - [x] 用 Node 脚本完成 `token → Cookie → session/list`（2026-11-04 实测 5 个会话）。
-- [ ] 用 Tailscale（或 frp）从手机访问桌面 `http://127.0.0.1:53985`。
-- [ ] 解决 Host 校验：`trustedHosts` 或反代改写 Host。
+- [x] 用 Tailscale（或 frp）从手机访问桌面 `http://127.0.0.1:53985`。
+- [x] 解决 Host 校验：`trustedHosts` 或反代改写 Host。
 - [ ] 用 `websocat`/Node 打开 `$events`，确认能收到 `api-session/status`。
-- [ ] 手机 Chrome 打开 SPA，确认登录、会话、输入、文件预览可用。
+- [x] 手机 Chrome 打开 SPA，确认登录、会话、输入、文件预览可用。
 - [ ] 桌面重启后，旧 Cookie 仍可用（验证 30 天持久性）。
-- [ ] 记录实际端口、Host 校验行为、WebSocket 是否被代理缓冲。
+- [x] 记录实际端口、Host 校验行为、WebSocket 是否被代理缓冲。
 
-**已完成**：bridge 插件、单元测试（14 个，含多 endpoint 二维码、本机配对页限制、反代拒绝、base 选择）、配对/认证/RPC 冒烟测试。
-**交付**：`docs/m0-setup.md`、`docs/protocol-notes.md`；`docs/spike-report.md` 待远程接入验证后补。
+**已完成**：bridge 插件、单元测试（14 个，含多 endpoint 二维码、本机配对页限制、反代拒绝、base 选择）、配对/认证/RPC 冒烟测试。  
+**实测**：`tailscale serve --bg http://127.0.0.1:53985` + `trustedHosts: hamster.tail52bb47.ts.net`；DSH Mobile 通过 Tailscale 完成配对、进入会话、加载 Fairy 皮肤。
+**交付**：`docs/m0-setup.md`、`docs/protocol-notes.md`；`docs/spike-report.md` 待补。
 
-**验收**：手机在 4G 下能打开会话并收到一次模型回复。
+**验收**：手机在 4G 下能打开会话并收到一次模型回复。（已实际使用 Tailscale 完成）
 
 ### M1 · MVP（第 2–4 周）
 
@@ -524,15 +525,15 @@ Cookie: ...
 - [x] Android 工程：Compose、OkHttp、WebView、ZXing（Keystore 留到 M3）。
 - [x] 配对：扫码/手动输入 → 换 Cookie → 存 Cookie。
 - [x] 连接管理（基础）：局域网 / Tailscale / frp 三套配置、添加/编辑/删除/测试/一键切换；健康检查、401 重配、前台服务随连接切换（真机待验收）。
-- [ ] 连接诊断向导：DNS / TCP / TLS / HTTP 状态 / WebSocket / Cookie 全链路诊断与一键修复建议。
-- [x] WebView：Cookie 注入、文件选择、下载、外链、返回键、软键盘。
-- [ ] 原生设置：通知、生物识别、清除配对、诊断（通知/清除配对已有；生物识别/诊断待补）。
+- [x] 连接诊断向导：DNS / TCP / TLS / HTTP 状态 / WebSocket / Cookie 全链路诊断与修复建议。
+- [x] WebView：Cookie 注入、文件选择、下载、外链、返回键、软键盘；已修复 WebView 高度、Fairy 遮挡、模型菜单和 DSH 对话框的 `100vh=0` 问题。
+- [ ] 原生设置：通知、生物识别、清除配对、诊断（通知/清除配对/诊断入口已有；生物识别待补）。
 - [x] 前台服务：`$events` → 审批/错误通知（完成态通知待 M2）。
 - [x] CSS 移动适配（基础版）：隐藏滚动条、输入框 16px、安全区；完整移动皮肤在 M2。
 - [x] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`（含二维码）、`/mobile/hello`。
 - [x] 桌面安装/配置文档。
 
-**当前状态**：Android 脚手架已提交到 `android/`，包含配对、三路连接管理/切换、WebView、前台事件服务、设置和单元测试；本机没有 JDK/SDK，待用 Android Studio 首次 Sync/构建后修正编译问题。三路桌面配置见 `docs/lan-setup.md`。
+**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断已实现（DNS/TCP/TLS/HTTP/Cookie/API/WebSocket），21 个 JVM 单元测试通过。三路桌面配置见 `docs/lan-setup.md`。下一步：真机跑 10 个 M1 验收任务，并补前台事件 `$events` 的实机确认。
 
 **验收**：在手机上完成 10 个真实任务（新建会话、切工作区、换模型、看文件、开终端、装/禁插件、审批），全程不碰电脑。
 

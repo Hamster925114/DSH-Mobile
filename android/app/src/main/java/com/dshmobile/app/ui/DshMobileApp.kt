@@ -38,6 +38,7 @@ fun DshMobileApp(viewModel: MainViewModel = viewModel()) {
             onSave = viewModel::saveProfile,
             onDelete = viewModel::deleteProfile,
             onTest = { profile -> viewModel.testProfile(profile) },
+            onDiagnose = { profile -> viewModel.diagnose(profile) },
         )
     } else {
         when (val current = state) {

@@ -110,6 +110,11 @@ fun SettingsSheet(
                 ) {
                     Text("连接管理（局域网 / Tailscale / frp）")
                 }
+                Text(
+                    text = "在连接管理里点每条连接的「诊断」，会依次检查 DNS、TCP、TLS、HTTP、Cookie、API 和 WebSocket。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 HorizontalDivider()
 

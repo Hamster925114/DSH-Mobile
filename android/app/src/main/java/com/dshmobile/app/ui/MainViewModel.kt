@@ -1,10 +1,13 @@
 package com.dshmobile.app.ui
 
 import android.app.Application
+import android.webkit.CookieManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dshmobile.app.data.ConnectionDiagnostics
 import com.dshmobile.app.data.ConnectionKind
 import com.dshmobile.app.data.ConnectionProfile
+import com.dshmobile.app.data.DiagnosticStep
 import com.dshmobile.app.data.DshApi
 import com.dshmobile.app.data.DshUrl
 import com.dshmobile.app.data.PairResult
@@ -43,6 +46,13 @@ sealed interface AppState {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
     private val api = DshApi()
+    private val diagnostics = ConnectionDiagnostics(
+        cookieLookup = { base ->
+            runCatching {
+                CookieManager.getInstance().getCookie("$base/")
+            }.getOrNull()
+        },
+    )
 
     private val _state = MutableStateFlow<AppState>(AppState.Loading)
     val state: StateFlow<AppState> = _state.asStateFlow()
@@ -219,6 +229,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
         }
     }
+
+    /** Run the DNS/TCP/TLS/HTTP/Cookie/API/WebSocket chain without switching. */
+    suspend fun diagnose(profile: ConnectionProfile): List<DiagnosticStep> =
+        diagnostics.run(profile.baseUrl)
 
     /** Probe a saved profile without switching to it. */
     suspend fun testProfile(profile: ConnectionProfile): Result<String> = runCatching {

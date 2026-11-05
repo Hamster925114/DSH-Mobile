@@ -89,13 +89,14 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 |---|---|
 | 配对 | 手动输入、ZXing 扫码、`dshmobile://pair?...` / JSON 解析、地址归一化 |
 | 认证 | 一次性码换 token URL、抓 `Set-Cookie`、CookieManager 持久化、`/mobile/hello` 校验 |
-| 连接管理 | 局域网 / Tailscale / frp + VPS 三个槽位，添加/编辑/删除/测试/切换，DataStore 持久化 |
+| 连接管理 | 局域网 / Tailscale / frp + VPS 三个槽位，添加/编辑/删除/测试/诊断/切换，DataStore 持久化 |
+| 连接诊断 | DNS → TCP → TLS → HTTP(bridge) → Cookie → API → WebSocket 全链路；失败项给出 Tailscale/frp/Host/Cookie 修复建议 |
 | 主页 | WebView 加载 `{base}/`，JS/DOM storage、Cookie、文件选择、下载、外链跳浏览器、返回键 |
 | 移动适配 | 注入基础 CSS（隐藏滚动条、输入框 16px 防 iOS 缩放、safe-area） |
-| 设置 | 当前连接、刷新会话数、重新加载、连接管理、清除配对 |
+| 设置 | 当前连接、刷新会话数、重新加载、连接管理（含诊断入口）、清除配对 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
-| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile` 单元测试 |
+| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics` 共 21 个 JVM 单元测试 |
 
 ### 3.1 明确不做（M1）
 
@@ -118,15 +119,17 @@ app/src/main/java/com/dshmobile/app/
     ConnectionProfile.kt       # 连接槽位（LAN/Tailscale/frp/CUSTOM）
     SettingsRepository.kt      # DataStore：连接列表、当前连接、通知开关
     DshApi.kt                  # 配对、Cookie、hello、session/list RPC
+    ConnectionDiagnostics.kt   # DNS/TCP/TLS/HTTP/Cookie/API/WebSocket 诊断
   service/
     DshEventService.kt         # 前台 $events WebSocket + 通知
   ui/
     DshMobileApp.kt            # Loading / Pairing / Home 状态机
     MainViewModel.kt           # 配对、连接切换、恢复、退出、会话数
     PairingScreen.kt           # 配对 + 连接方式选择
-    ConnectionsScreen.kt       # 连接管理（添加/编辑/测试/删除/切换）
+    ConnectionsScreen.kt       # 连接管理（添加/编辑/测试/诊断/删除/切换）
+    ConnectionDiagnosticsDialog.kt # 诊断结果弹层
     HomeScreen.kt              # WebView + 文件选择/下载/设置浮层
-    SettingsSheet.kt
+    SettingsSheet.kt           # 原生设置 Dialog
     theme/Theme.kt
 ```
 
@@ -141,9 +144,9 @@ app/src/main/java/com/dshmobile/app/
 
 ## 5. M1 验收清单
 
-- [ ] Android Studio 能 Sync，`assembleDebug` 成功。
-- [ ] 局域网 / Tailscale / frp + VPS 至少两条链路可用。
-- [ ] 桌面 `/mobile/pair` 为每种连接显示二维码；App 扫码成功。
+- [x] Android Studio 能 Sync，`assembleDebug` 成功。
+- [ ] 局域网 / Tailscale / frp + VPS 至少两条链路可用（Tailscale 已通）。
+- [x] 桌面 `/mobile/pair` 为每种连接显示二维码；App 扫码成功（Tailscale）。
 - [ ] 三种连接分别配对一次后，在「连接管理」里切换不需要重新配对。
 - [ ] 连接后 WebView 显示 DSH 会话列表，不需要在手机浏览器再登录。
 - [ ] 打开一个会话，能发消息、看到流式输出。

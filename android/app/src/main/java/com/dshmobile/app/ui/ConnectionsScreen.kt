@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.dshmobile.app.data.ConnectionKind
 import com.dshmobile.app.data.ConnectionProfile
+import com.dshmobile.app.data.DiagnosticStep
 import com.dshmobile.app.data.DshUrl
 import com.dshmobile.app.data.baseUrlHint
 import com.dshmobile.app.data.withDefaultScheme
@@ -61,13 +62,26 @@ fun ConnectionsScreen(
     onSave: (ConnectionProfile) -> Unit,
     onDelete: (String) -> Unit,
     onTest: suspend (ConnectionProfile) -> Result<String>,
+    onDiagnose: suspend (ConnectionProfile) -> List<DiagnosticStep>,
 ) {
     var editorTarget by remember { mutableStateOf<ConnectionProfile?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<ConnectionProfile?>(null) }
     var testMessage by remember { mutableStateOf<String?>(null) }
     var testingId by remember { mutableStateOf<String?>(null) }
+    var diagnoseTarget by remember { mutableStateOf<ConnectionProfile?>(null) }
+    var diagnoseResults by remember { mutableStateOf<List<DiagnosticStep>>(emptyList()) }
+    var diagnoseRunning by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val runDiagnostics: (ConnectionProfile) -> Unit = { profile ->
+        diagnoseTarget = profile
+        diagnoseResults = emptyList()
+        diagnoseRunning = true
+        scope.launch {
+            diagnoseResults = onDiagnose(profile)
+            diagnoseRunning = false
+        }
+    }
 
     BackHandler(onBack = onBack)
 
@@ -135,6 +149,7 @@ fun ConnectionsScreen(
                             editorOpen = true
                         },
                         onDelete = { deleteTarget = profile },
+                        onDiagnose = { runDiagnostics(profile) },
                     )
                 }
             }
@@ -183,6 +198,18 @@ fun ConnectionsScreen(
             },
         )
     }
+
+    diagnoseTarget?.let { target ->
+        ConnectionDiagnosticsDialog(
+            profile = target,
+            running = diagnoseRunning,
+            results = diagnoseResults,
+            onRun = { runDiagnostics(target) },
+            onDismiss = {
+                if (!diagnoseRunning) diagnoseTarget = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -194,6 +221,7 @@ private fun ConnectionCard(
     onTest: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onDiagnose: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(
@@ -261,6 +289,12 @@ private fun ConnectionCard(
                         )
                     }
                     Text("测试")
+                }
+                TextButton(
+                    onClick = onDiagnose,
+                    enabled = profile.baseUrl.isNotBlank(),
+                ) {
+                    Text("诊断")
                 }
                 TextButton(onClick = onEdit) { Text("编辑") }
                 TextButton(onClick = onDelete) { Text("删除") }
