@@ -75,6 +75,21 @@ test('proxy admits a valid cookie and refreshes the cookie', async () => {
   }
 })
 
+test('proxy preserves DSH plugin-bundle query syntax', async () => {
+  const fixture = await createFixture()
+  try {
+    const path =
+      '/plugins/??@deepseek-ai/dsh-api-gateway/client.js,@deepseek-ai/dsh-client-ui-theme/client.js&rev=abc'
+    const response = await fetch(`http://127.0.0.1:${fixture.proxy.port}${path}`, {
+      headers: { cookie: 'dsh_mobile_device=good-token' },
+    })
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).url, path)
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
 test('proxy accepts a one-time device query and strips it upstream', async () => {
   const fixture = await createFixture()
   try {

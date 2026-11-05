@@ -85,7 +85,11 @@ export function deviceCookie(token, secure) {
  * @param {URL} url
  * @returns {string}
  */
-function forwardedPath(url) {
+function forwardedPath(url, original) {
+  // Preserve the wire format unless the one-time device parameter is present.
+  // DSH's plugin bundle uses `plugins/??pkg/a,@pkg/b`; reserializing that query
+  // through URLSearchParams escapes the separators and yields a 404.
+  if (!url.searchParams.has('device')) return original
   const copy = new URL(url.href)
   copy.searchParams.delete('device')
   return `${copy.pathname}${copy.search}`
@@ -192,7 +196,7 @@ export async function startDeviceProxy(options) {
           host: targetHost,
           port: targetPort,
           method: req.method,
-          path: forwardedPath(url),
+          path: forwardedPath(url, req.url ?? '/'),
           headers,
         },
         (upstreamResponse) => {
@@ -256,7 +260,9 @@ export async function startDeviceProxy(options) {
             .map(([name, value]) => `${name}=${value}`)
             .join('; ')
         }
-        const lines = [`${req.method ?? 'GET'} ${forwardedPath(url)} HTTP/1.1`]
+        const lines = [
+          `${req.method ?? 'GET'} ${forwardedPath(url, req.url ?? '/')} HTTP/1.1`,
+        ]
         for (const [name, value] of Object.entries(headers)) {
           if (value === undefined) continue
           if (Array.isArray(value)) {
