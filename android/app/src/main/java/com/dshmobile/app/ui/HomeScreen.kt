@@ -190,14 +190,27 @@ fun HomeScreen(
                         DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED,
                     )
                     val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
-                    request.setDestinationInExternalFilesDir(
-                        context,
-                        Environment.DIRECTORY_DOWNLOADS,
-                        fileName,
-                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        // Public Downloads: visible in Files/Downloads and shareable.
+                        request.setDestinationInExternalPublicDir(
+                            Environment.DIRECTORY_DOWNLOADS,
+                            fileName,
+                        )
+                    } else {
+                        request.setDestinationInExternalFilesDir(
+                            context,
+                            Environment.DIRECTORY_DOWNLOADS,
+                            fileName,
+                        )
+                    }
                     val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                     manager.enqueue(request)
-                    Toast.makeText(context, "开始下载：$fileName", Toast.LENGTH_SHORT).show()
+                    val location = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        "系统下载目录"
+                    } else {
+                        "应用下载目录"
+                    }
+                    Toast.makeText(context, "开始下载到$location：$fileName", Toast.LENGTH_SHORT).show()
                 }.onFailure {
                     Toast.makeText(context, "下载失败：${it.message}", Toast.LENGTH_SHORT).show()
                 }
