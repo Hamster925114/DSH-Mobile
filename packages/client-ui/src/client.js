@@ -104,8 +104,16 @@ window.__ModuleLoader__.load({
         justify-content: center;
         box-shadow: 6px 0 18px rgba(0, 0, 0, 0.25);
       }
+      /* Keep a close affordance at the drawer edge so ≡ toggles both ways. */
       html[data-dsh-mobile-drawer-open="1"] #dsh-mobile-drawer-handle {
-        display: none;
+        display: flex;
+        left: min(82vw, 320px);
+        top: 42%;
+        width: 34px;
+        height: 40px;
+        border-radius: 0 12px 12px 0;
+        font-size: 20px;
+        z-index: 56;
       }
       #dsh-mobile-drawer-backdrop {
         display: none;
@@ -192,7 +200,7 @@ window.__ModuleLoader__.load({
             document.documentElement.dataset.dshMobileUi = '1'
           } else {
             delete document.documentElement.dataset.dshMobileUi
-            closeDrawer()
+            closeDrawer(false)
           }
         }
 
@@ -210,14 +218,52 @@ window.__ModuleLoader__.load({
         const backdrop = document.createElement('div')
         backdrop.id = 'dsh-mobile-drawer-backdrop'
 
-        function closeDrawer() {
+        // The rail is DSH's collapsed sidebar: icons only. Expand it while the
+        // mobile drawer is open so every icon gets its label and the session
+        // list fills what was otherwise a large blank panel.
+        function sidebarRoot() {
+          return document.querySelector('.mP3x-q_sidebarCol [class*="wtg9ga_root"]')
+        }
+        function setSidebarExpanded(expanded) {
+          const root = sidebarRoot()
+          if (!root) return
+          const collapsed = root.classList.contains('wtg9ga_collapsed')
+          if (expanded === !collapsed) return
+          const toggle = root.querySelector('button.wtg9ga_toggle')
+          if (toggle) toggle.click()
+        }
+
+        let expandTimer = null
+        function closeDrawer(restoreSidebar = true) {
+          if (expandTimer !== null) {
+            clearTimeout(expandTimer)
+            expandTimer = null
+          }
           document.documentElement.removeAttribute('data-dsh-mobile-drawer-open')
+          handle.textContent = '☰'
+          handle.setAttribute('aria-label', '打开菜单')
+          if (restoreSidebar) setSidebarExpanded(false)
+        }
+        function openDrawer() {
+          document.documentElement.setAttribute('data-dsh-mobile-drawer-open', '1')
+          handle.textContent = '×'
+          handle.setAttribute('aria-label', '关闭菜单')
+          setSidebarExpanded(true)
+          // DSH may restore its persisted collapsed rail while the page is
+          // still settling; expand again after the transition.
+          if (expandTimer !== null) clearTimeout(expandTimer)
+          expandTimer = setTimeout(() => {
+            expandTimer = null
+            if (document.documentElement.hasAttribute('data-dsh-mobile-drawer-open')) {
+              setSidebarExpanded(true)
+            }
+          }, 400)
         }
         function toggleDrawer() {
           if (document.documentElement.hasAttribute('data-dsh-mobile-drawer-open')) {
             closeDrawer()
           } else {
-            document.documentElement.setAttribute('data-dsh-mobile-drawer-open', '1')
+            openDrawer()
           }
         }
 
@@ -226,26 +272,12 @@ window.__ModuleLoader__.load({
           toggleDrawer()
         }
         const onBackdropClick = () => closeDrawer()
-        const onDocumentClick = (event) => {
-          if (!document.documentElement.hasAttribute('data-dsh-mobile-drawer-open')) return
-          const target = event.target
-          if (!(target instanceof Element)) return
-          if (target.closest('#dsh-mobile-drawer-backdrop')) {
-            closeDrawer()
-            return
-          }
-          const sidebar = target.closest('.mP3x-q_sidebarCol')
-          if (sidebar && target.closest('button')) {
-            setTimeout(closeDrawer, 180)
-          }
-        }
 
         if (document.body) {
           document.body.appendChild(handle)
           document.body.appendChild(backdrop)
           handle.addEventListener('click', onHandleClick)
           backdrop.addEventListener('click', onBackdropClick)
-          document.addEventListener('click', onDocumentClick, true)
         }
 
         applyMarker()
@@ -256,7 +288,7 @@ window.__ModuleLoader__.load({
             try { query.removeEventListener('change', applyMarker) } catch {}
             try { handle.removeEventListener('click', onHandleClick) } catch {}
             try { backdrop.removeEventListener('click', onBackdropClick) } catch {}
-            try { document.removeEventListener('click', onDocumentClick, true) } catch {}
+            try { if (expandTimer !== null) clearTimeout(expandTimer) } catch {}
             try { handle.remove() } catch {}
             try { backdrop.remove() } catch {}
             try { closeDrawer() } catch {}

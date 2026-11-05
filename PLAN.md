@@ -284,7 +284,7 @@ location / {
 
 1. **CSS 重排**：`@media (max-width: 768px)` 下把侧栏变成抽屉、右栏变成全屏 Sheet、输入框贴底、隐藏桌面 resize handle。
 2. **`shell.bottom` 底部标签栏**：Chat / 会话 / 文件 / 终端 / 更多；调用 `ctx.layout.toggleSidebar()`、`ctx.layout.selectPanel()`、`ctx.layout.openRightbar(track, true)`。
-3. **`shell.overlay` 抽屉/遮罩**：会话和工作区列表从左侧滑出；返回键先关抽屉。
+3. **`shell.overlay` 抽屉/遮罩**：会话和工作区列表从左侧滑出；打开时自动把 DSH 的折叠 rail 展开为带文字的完整侧栏，点击图标不会收起抽屉；抽屉右缘的 `×` 或遮罩负责关闭，关闭时恢复 rail。
 
 关键 CSS 变量：
 
@@ -566,7 +566,7 @@ Cookie: ...
 
 - [x] 原生底部导航：会话 / 文件 / 终端 / 设置（M2 第一增量，已真机验证）。
 - [x] `@dsh-mobile/client-ui` CSS 基础皮肤：全宽会话列、header/composer 留白、隐藏 turn rail、加大菜单触控、移动宽度标记；已热加载到真机。
-- [x] `@dsh-mobile/client-ui` 完整布局 v1：左边缘抽屉、文件/终端全屏 Sheet（真机待最终验收）、安全区细节、平板断点待补。
+- [x] `@dsh-mobile/client-ui` 完整布局 v1：左边缘抽屉、文件/终端全屏 Sheet、安全区细节；抽屉展开 DSH 完整侧栏并显示图标文字，右缘 `×` 关闭。
 - [x] 终端按键栏（Esc/Tab/Enter/Ctrl/Alt/Ctrl+C/方向键，已接入原生底栏）。
 - [x] 深链：通知点开直达会话（`singleTop` + `session_id` / `dshmobile://session/<id>` + `uiWorkspace.openSession` 桥）。
 - [x] 文件分享/保存、拍照上传、剪贴板图片（下载完成通知含“打开/分享”）。

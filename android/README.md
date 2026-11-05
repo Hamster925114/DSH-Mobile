@@ -135,7 +135,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | M2 底部导航 | 会话 / 文件 / 终端 / 设置，调用 WebView 现有入口 |
 | M2 终端按键栏 | Esc / Tab / Enter / Ctrl / Alt / Ctrl+C / 方向键，点击后发送到 xterm |
 | M2 离线提示 | 系统网络 + DSH `/mobile/hello` 健康探测；断线顶部横幅，恢复后自动重载 |
-| M2 客户端皮肤 | `@dsh-mobile/client-ui`：全宽会话列、中栏固定到内容轨道（修复 0px 命中区）、折叠右栏隐藏、全屏 Sheet、移动留白、触控尺寸 |
+| M2 客户端皮肤 | `@dsh-mobile/client-ui`：全宽会话列、中栏固定到内容轨道（修复 0px 命中区）、折叠右栏隐藏、全屏 Sheet、移动留白、触控尺寸；抽屉展开 DSH 完整侧栏（图标带文字），右缘 `×` 关闭 |
 | M2 横屏 | 紧凑图标底栏、矮终端按键栏、旋转不重建 WebView |
 | M2 深链 | 通知携带 `session_id` / `dshmobile://session/<id>`；`singleTop` + `onNewIntent`；`client-ui` 暴露 `uiWorkspace.openSession` 桥 |
 | M2 文件 | 文件选择多选 + 拍照；选中文件先复制到 App 缓存并由 `FileProvider` 提供稳定 URI，避免 content URI 授权过期导致上传失败；下载完成通知含“打开/分享” |
