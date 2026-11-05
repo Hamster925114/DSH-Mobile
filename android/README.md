@@ -110,6 +110,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | M2 终端按键栏 | Esc / Tab / Enter / Ctrl / Alt / Ctrl+C / 方向键，点击后发送到 xterm |
 | M2 离线提示 | 系统网络 + DSH `/mobile/hello` 健康探测；断线顶部横幅，恢复后自动重载 |
 | M2 客户端皮肤 | `@dsh-mobile/client-ui` CSS 基础版：全宽会话列、移动留白、隐藏 turn rail、触控尺寸 |
+| M2 横屏 | 紧凑图标底栏、矮终端按键栏、旋转不重建 WebView |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
 | 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics` 共 22 个 JVM 单元测试 |

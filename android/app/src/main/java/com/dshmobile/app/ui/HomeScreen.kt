@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
@@ -70,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -95,6 +97,7 @@ fun HomeScreen(
     onRefresh: () -> Unit,
 ) {
     val context = LocalContext.current
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var terminalMode by rememberSaveable { mutableStateOf(false) }
     var terminalCtrl by rememberSaveable { mutableStateOf(false) }
@@ -425,6 +428,7 @@ fun HomeScreen(
 
         if (terminalMode) {
             TerminalKeyBar(
+                compact = landscape,
                 ctrl = terminalCtrl,
                 alt = terminalAlt,
                 onToggleCtrl = { terminalCtrl = !terminalCtrl },
@@ -435,6 +439,7 @@ fun HomeScreen(
         }
 
         MobileBottomBar(
+            compact = landscape,
             onChat = {
                 terminalMode = false
                 clickMobileTarget(webView, "chat")
@@ -492,6 +497,7 @@ fun HomeScreen(
 
 @Composable
 private fun TerminalKeyBar(
+    compact: Boolean,
     ctrl: Boolean,
     alt: Boolean,
     onToggleCtrl: () -> Unit,
@@ -504,19 +510,19 @@ private fun TerminalKeyBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 8.dp, vertical = if (compact) 3.dp else 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
         ) {
-            TerminalKey("Esc") { onKey("Escape") }
-            TerminalKey("Tab") { onKey("Tab") }
-            TerminalKey("Enter") { onKey("Enter") }
-            TerminalKey("Ctrl", selected = ctrl, onClick = onToggleCtrl)
-            TerminalKey("Alt", selected = alt, onClick = onToggleAlt)
-            TerminalKey("Ctrl+C", onClick = onCtrlC)
-            TerminalKey("↑") { onKey("ArrowUp") }
-            TerminalKey("↓") { onKey("ArrowDown") }
-            TerminalKey("←") { onKey("ArrowLeft") }
-            TerminalKey("→") { onKey("ArrowRight") }
+            TerminalKey("Esc", compact = compact) { onKey("Escape") }
+            TerminalKey("Tab", compact = compact) { onKey("Tab") }
+            TerminalKey("Enter", compact = compact) { onKey("Enter") }
+            TerminalKey("Ctrl", compact = compact, selected = ctrl, onClick = onToggleCtrl)
+            TerminalKey("Alt", compact = compact, selected = alt, onClick = onToggleAlt)
+            TerminalKey("Ctrl+C", compact = compact, onClick = onCtrlC)
+            TerminalKey("↑", compact = compact) { onKey("ArrowUp") }
+            TerminalKey("↓", compact = compact) { onKey("ArrowDown") }
+            TerminalKey("←", compact = compact) { onKey("ArrowLeft") }
+            TerminalKey("→", compact = compact) { onKey("ArrowRight") }
         }
     }
 }
@@ -524,6 +530,7 @@ private fun TerminalKeyBar(
 @Composable
 private fun TerminalKey(
     label: String,
+    compact: Boolean = false,
     selected: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -535,18 +542,22 @@ private fun TerminalKey(
             MaterialTheme.colorScheme.surfaceVariant
         },
         modifier = Modifier
-            .height(36.dp)
+            .height(if (compact) 30.dp else 36.dp)
             .clickable(onClick = onClick),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = if (compact) 9.dp else 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = if (compact) {
+                    MaterialTheme.typography.labelSmall
+                } else {
+                    MaterialTheme.typography.labelMedium
+                },
                 color = if (selected) {
                     MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
@@ -559,6 +570,7 @@ private fun TerminalKey(
 
 @Composable
 private fun MobileBottomBar(
+    compact: Boolean,
     onChat: () -> Unit,
     onFiles: () -> Unit,
     onTerminal: () -> Unit,
@@ -569,29 +581,33 @@ private fun MobileBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .height(58.dp),
+                .height(if (compact) 42.dp else 58.dp),
         ) {
             MobileNavItem(
                 icon = Icons.Default.Chat,
                 label = "会话",
+                compact = compact,
                 onClick = onChat,
                 modifier = Modifier.weight(1f),
             )
             MobileNavItem(
                 icon = Icons.Default.Folder,
                 label = "文件",
+                compact = compact,
                 onClick = onFiles,
                 modifier = Modifier.weight(1f),
             )
             MobileNavItem(
                 icon = Icons.Default.Terminal,
                 label = "终端",
+                compact = compact,
                 onClick = onTerminal,
                 modifier = Modifier.weight(1f),
             )
             MobileNavItem(
                 icon = Icons.Default.Settings,
                 label = "设置",
+                compact = compact,
                 onClick = onSettings,
                 modifier = Modifier.weight(1f),
             )
@@ -603,6 +619,7 @@ private fun MobileBottomBar(
 private fun MobileNavItem(
     icon: ImageVector,
     label: String,
+    compact: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -616,15 +633,17 @@ private fun MobileNavItem(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            modifier = Modifier.size(21.dp),
+            modifier = Modifier.size(if (compact) 20.dp else 21.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 2.dp),
-        )
+        if (!compact) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
     }
 }
 

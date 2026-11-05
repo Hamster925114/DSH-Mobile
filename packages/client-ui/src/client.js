@@ -141,7 +141,9 @@ window.__ModuleLoader__.load({
         style.textContent = CSS
         document.head.appendChild(style)
 
-        const query = window.matchMedia('(max-width: 820px)')
+        const query = window.matchMedia(
+          '(max-width: 820px), (max-height: 500px) and (pointer: coarse)'
+        )
         const applyMarker = () => {
           if (query.matches) {
             document.documentElement.dataset.dshMobileUi = '1'
