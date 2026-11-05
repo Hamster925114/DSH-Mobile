@@ -542,7 +542,8 @@ Cookie: ...
 **目标**：从“能用”到“好用”。
 
 - [x] 原生底部导航：会话 / 文件 / 终端 / 设置（M2 第一增量，已真机验证）。
-- [ ] `@dsh-mobile/client-ui` 插件：底部标签栏、抽屉、全屏 Sheet、安全区、触屏尺寸（桌面皮肤，待做）。
+- [x] `@dsh-mobile/client-ui` CSS 基础皮肤：全宽会话列、header/composer 留白、隐藏 turn rail、加大菜单触控、移动宽度标记；已热加载到真机。
+- [ ] `@dsh-mobile/client-ui` 完整布局：移动抽屉、全屏 Sheet、安全区细节、平板断点。
 - [x] 终端按键栏（Esc/Tab/Enter/Ctrl/Alt/Ctrl+C/方向键，已接入原生底栏）。
 - [ ] 深链：通知点开直达会话/面板。
 - [ ] 文件分享/保存、拍照上传、剪贴板图片。

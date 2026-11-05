@@ -1,0 +1,4 @@
+# Install the client-only mobile skin into the DSH desktop profile.
+- insert:
+    - id: dsh-mobile-client-ui
+      name: '@dsh-mobile/client-ui'
