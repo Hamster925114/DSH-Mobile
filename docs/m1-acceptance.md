@@ -18,6 +18,7 @@
 | 发送消息 / 流式回复 | 通过（“只回复 OK”收到 `OK`，1 秒完成） |
 | 切换模型 | 通过（`DeepSeek-V4.1-Flash` → `DeepSeek-V4-Pro` → 切回） |
 | 文件预览 | 通过（Workspace files → `PLAN.md`） |
+| 终端 | 通过（`cmd.exe` 打开，执行 `echo DSH_MOBILE_TERMINAL_OK` 返回 `DSH_MOBILE_TERMINAL_OK`） |
 | 插件页面 | 通过（Installed / Plugin Market 可打开） |
 | DSH 设置 | 通过（头像 → Settings，移动端上下布局） |
 | 添加工作区 | 通过（目录列表、Cancel/Open 正常） |
@@ -28,7 +29,6 @@
 
 | 项目 | 说明 |
 |---|---|
-| 终端 | 打开会话终端并执行一次命令 |
 | 插件启停 | 在插件页启用/禁用一次（建议用非关键插件） |
 | 审批 | 触发一次工具审批并确认通知 |
 | 文件选择 / 上传 | 从系统文件选择器选附件 |

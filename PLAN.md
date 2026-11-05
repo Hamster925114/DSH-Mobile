@@ -533,7 +533,7 @@ Cookie: ...
 - [x] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`（含二维码）、`/mobile/hello`。
 - [x] 桌面安装/配置文档。
 
-**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断已实现并真机跑通全部 8 项（DNS/TCP/TLS/HTTP/Cookie/API/WebSocket）；22 个 JVM 单元测试通过。前台服务 `$events` 已收到 `ready`。已实测：新建会话、发送消息并收到流式回复、切换模型、文件预览、插件页、原生设置、添加工作区。M1 剩余验收：终端、插件启停、审批、文件选择/下载、LAN/frp 切换。三路桌面配置见 `docs/lan-setup.md`。
+**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断已实现并真机跑通全部 8 项（DNS/TCP/TLS/HTTP/Cookie/API/WebSocket）；22 个 JVM 单元测试通过。前台服务 `$events` 已收到 `ready`。已实测：新建会话、发送消息并收到流式回复、切换模型、文件预览、插件页、原生设置、添加工作区、终端命令。M1 剩余验收：插件启停、审批、文件选择/下载、LAN/frp 切换。三路桌面配置见 `docs/lan-setup.md`。
 
 **验收**：在手机上完成 10 个真实任务（新建会话、切工作区、换模型、看文件、开终端、装/禁插件、审批），全程不碰电脑。
 
