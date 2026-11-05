@@ -108,6 +108,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | 设置 | 当前连接、刷新会话数、重新加载、连接管理（含诊断入口）、清除配对 |
 | M2 底部导航 | 会话 / 文件 / 终端 / 设置，调用 WebView 现有入口 |
 | M2 终端按键栏 | Esc / Tab / Enter / Ctrl / Alt / Ctrl+C / 方向键，点击后发送到 xterm |
+| M2 离线提示 | 系统网络 + DSH `/mobile/hello` 健康探测；断线顶部横幅，恢复后自动重载 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
 | 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics` 共 22 个 JVM 单元测试 |

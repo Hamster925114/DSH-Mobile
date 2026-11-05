@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -54,6 +57,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,7 +74,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.dshmobile.app.data.DshApi
 import com.dshmobile.app.service.DshEventService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -90,6 +99,10 @@ fun HomeScreen(
     var terminalMode by rememberSaveable { mutableStateOf(false) }
     var terminalCtrl by rememberSaveable { mutableStateOf(false) }
     var terminalAlt by rememberSaveable { mutableStateOf(false) }
+    var networkAvailable by remember { mutableStateOf(true) }
+    var dshReachable by remember { mutableStateOf(true) }
+    var wasOffline by remember { mutableStateOf(false) }
+    val healthApi = remember { DshApi() }
     var loading by remember { mutableStateOf(true) }
     var canGoBack by remember { mutableStateOf(false) }
     var pageError by remember { mutableStateOf<String?>(null) }
@@ -233,6 +246,68 @@ fun HomeScreen(
         }
     }
 
+    DisposableEffect(Unit) {
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        networkAvailable = connectivity.activeNetwork?.let { network ->
+            connectivity.getNetworkCapabilities(network)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } ?: false
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                networkAvailable = true
+            }
+
+            override fun onLost(network: Network) {
+                networkAvailable = false
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities,
+            ) {
+                networkAvailable = networkCapabilities
+                    .hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
+        }
+        connectivity.registerDefaultNetworkCallback(callback)
+        onDispose {
+            runCatching { connectivity.unregisterNetworkCallback(callback) }
+        }
+    }
+
+    LaunchedEffect(networkAvailable) {
+        if (!networkAvailable) {
+            wasOffline = true
+        } else if (wasOffline) {
+            wasOffline = false
+            if (pageError != null) {
+                pageError = null
+                loading = true
+                webView.reload()
+            }
+        }
+    }
+
+    LaunchedEffect(baseUrl) {
+        while (isActive) {
+            val reachable = withContext(Dispatchers.IO) {
+                healthApi.testConnection(baseUrl).isSuccess
+            }
+            dshReachable = reachable
+            if (!reachable) {
+                wasOffline = true
+            } else if (wasOffline) {
+                wasOffline = false
+                if (pageError != null) {
+                    pageError = null
+                    loading = true
+                    webView.reload()
+                }
+            }
+            delay(5_000)
+        }
+    }
+
     LaunchedEffect(baseUrl) {
         loading = true
         pageError = null
@@ -252,6 +327,7 @@ fun HomeScreen(
     DisposableEffect(webView) {
         onDispose {
             context.stopService(Intent(context, DshEventService::class.java))
+            healthApi.close()
             webView.stopLoading()
             webView.destroy()
         }
@@ -268,6 +344,37 @@ fun HomeScreen(
     ) {
         if (loading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (!networkAvailable || !dshReachable) {
+            Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (!networkAvailable) {
+                            "网络已断开，正在等待恢复…"
+                        } else {
+                            "DSH 不可达，检查电脑和 Tailscale…"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            pageError = null
+                            loading = true
+                            webView.reload()
+                        },
+                    ) {
+                        Text("重试")
+                    }
+                }
+            }
         }
 
         Box(
@@ -295,6 +402,12 @@ fun HomeScreen(
                         text = pageError.orEmpty(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "检查手机网络和 Tailscale 是否连接，然后重试。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                     Button(
                         onClick = {
