@@ -405,6 +405,29 @@ private fun injectMobileCss(view: WebView?) {
             /* Once the skin reaches its dock phase, make sure its full-screen
                stage cannot keep covering the app if a WebView transition stalls. */
             .fz3-layer[data-phase="dock"] .fz3-screen { display: none !important; }
+            /* DSH settings on a phone: stack nav above content instead of
+               squeezing the 800px desktop panel into 372px. */
+            @media (max-width: 700px) {
+              .AnXs9G_panel { flex-direction: column !important; }
+              .AnXs9G_nav {
+                width: 100% !important;
+                padding: 12px !important;
+                gap: 8px !important;
+              }
+              .AnXs9G_navList {
+                flex-direction: row !important;
+                overflow-x: auto !important;
+                overflow-y: hidden !important;
+              }
+              .AnXs9G_navCell {
+                height: 36px !important;
+                white-space: nowrap;
+              }
+              .AnXs9G_content {
+                width: 100% !important;
+                min-width: 0 !important;
+              }
+            }
             * { -webkit-tap-highlight-color: transparent; }
             ::-webkit-scrollbar { width: 0; height: 0; }
             textarea, input { font-size: 16px !important; }
@@ -456,6 +479,31 @@ private fun injectMobileCss(view: WebView?) {
           }
           setInterval(scanMenus, 300);
           new MutationObserver(scanMenus).observe(document.body, { childList: true, subtree: true });
+
+          /* DSH dialogs use height:min(800px, calc(100vh - ...)), which also
+             becomes 0 in this WebView. Give visible zero-height dialogs a real
+             viewport height; this covers DSH Settings and Add Workspace. */
+          function fitDialogs() {
+            var h = Math.min(800, window.innerHeight - 48);
+            document.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach(function(dialog) {
+              if (dialog.dataset.dshMobileDialogFixed === '1') {
+                dialog.style.setProperty('height', h + 'px', 'important');
+                dialog.style.setProperty('max-height', h + 'px', 'important');
+                return;
+              }
+              var rect = dialog.getBoundingClientRect();
+              if (rect.width < 20 || rect.height > 20) return;
+              var cs = getComputedStyle(dialog);
+              if (cs.display === 'none' || cs.visibility === 'hidden') return;
+              dialog.dataset.dshMobileDialogFixed = '1';
+              dialog.style.setProperty('height', h + 'px', 'important');
+              dialog.style.setProperty('max-height', h + 'px', 'important');
+            });
+          }
+          fitDialogs();
+          window.addEventListener('resize', fitDialogs);
+          setInterval(fitDialogs, 300);
+          new MutationObserver(fitDialogs).observe(document.body, { childList: true, subtree: true });
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
