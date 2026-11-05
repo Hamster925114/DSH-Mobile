@@ -26,6 +26,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +50,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,6 +86,9 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var terminalMode by rememberSaveable { mutableStateOf(false) }
+    var terminalCtrl by rememberSaveable { mutableStateOf(false) }
+    var terminalAlt by rememberSaveable { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var canGoBack by remember { mutableStateOf(false) }
     var pageError by remember { mutableStateOf<String?>(null) }
@@ -301,11 +308,34 @@ fun HomeScreen(
             }
         }
 
+        if (terminalMode) {
+            TerminalKeyBar(
+                ctrl = terminalCtrl,
+                alt = terminalAlt,
+                onToggleCtrl = { terminalCtrl = !terminalCtrl },
+                onToggleAlt = { terminalAlt = !terminalAlt },
+                onKey = { key -> sendTerminalKey(webView, key, terminalCtrl, terminalAlt) },
+                onCtrlC = { sendTerminalKey(webView, "c", true, false) },
+            )
+        }
+
         MobileBottomBar(
-            onChat = { clickMobileTarget(webView, "chat") },
-            onFiles = { clickMobileTarget(webView, "files") },
-            onTerminal = { clickMobileTarget(webView, "terminal") },
-            onSettings = { showSettings = true },
+            onChat = {
+                terminalMode = false
+                clickMobileTarget(webView, "chat")
+            },
+            onFiles = {
+                terminalMode = false
+                clickMobileTarget(webView, "files")
+            },
+            onTerminal = {
+                terminalMode = true
+                clickMobileTarget(webView, "terminal")
+            },
+            onSettings = {
+                terminalMode = false
+                showSettings = true
+            },
         )
     }
 
@@ -342,6 +372,73 @@ fun HomeScreen(
             },
             onDismiss = { showSettings = false },
         )
+    }
+}
+
+@Composable
+private fun TerminalKeyBar(
+    ctrl: Boolean,
+    alt: Boolean,
+    onToggleCtrl: () -> Unit,
+    onToggleAlt: () -> Unit,
+    onKey: (String) -> Unit,
+    onCtrlC: () -> Unit,
+) {
+    Surface(tonalElevation = 2.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            TerminalKey("Esc") { onKey("Escape") }
+            TerminalKey("Tab") { onKey("Tab") }
+            TerminalKey("Enter") { onKey("Enter") }
+            TerminalKey("Ctrl", selected = ctrl, onClick = onToggleCtrl)
+            TerminalKey("Alt", selected = alt, onClick = onToggleAlt)
+            TerminalKey("Ctrl+C", onClick = onCtrlC)
+            TerminalKey("↑") { onKey("ArrowUp") }
+            TerminalKey("↓") { onKey("ArrowDown") }
+            TerminalKey("←") { onKey("ArrowLeft") }
+            TerminalKey("→") { onKey("ArrowRight") }
+        }
+    }
+}
+
+@Composable
+private fun TerminalKey(
+    label: String,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        modifier = Modifier
+            .height(36.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
     }
 }
 
@@ -486,6 +583,73 @@ private fun clickMobileTarget(view: WebView?, target: String) {
           var open = document.querySelector('[aria-label="Open right sidebar"]');
           if (open) open.click();
           setTimeout(function() { clickTarget(); }, 600);
+        })();
+    """.trimIndent()
+    view?.evaluateJavascript(script, null)
+}
+
+private fun sendTerminalKey(
+    view: WebView?,
+    key: String,
+    ctrl: Boolean,
+    alt: Boolean,
+) {
+    val code: String
+    val keyCode: Int
+    when (key) {
+        "Escape" -> {
+            code = "Escape"
+            keyCode = 27
+        }
+        "Tab" -> {
+            code = "Tab"
+            keyCode = 9
+        }
+        "Enter" -> {
+            code = "Enter"
+            keyCode = 13
+        }
+        "ArrowUp" -> {
+            code = "ArrowUp"
+            keyCode = 38
+        }
+        "ArrowDown" -> {
+            code = "ArrowDown"
+            keyCode = 40
+        }
+        "ArrowLeft" -> {
+            code = "ArrowLeft"
+            keyCode = 37
+        }
+        "ArrowRight" -> {
+            code = "ArrowRight"
+            keyCode = 39
+        }
+        else -> {
+            code = "Key${key.uppercase()}"
+            keyCode = key.uppercase().first().code
+        }
+    }
+    val script = """
+        (function() {
+          var textarea = document.querySelector('.xterm-helper-textarea');
+          if (!textarea) return;
+          textarea.focus();
+          var options = {
+            key: '${key}',
+            code: '$code',
+            keyCode: $keyCode,
+            which: $keyCode,
+            ctrlKey: $ctrl,
+            altKey: $alt,
+            bubbles: true,
+            cancelable: true
+          };
+          textarea.dispatchEvent(new KeyboardEvent('keydown', options));
+          if ('${key}'.length === 1) {
+            textarea.dispatchEvent(new KeyboardEvent('keypress', options));
+          }
+          textarea.dispatchEvent(new KeyboardEvent('keyup', options));
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
