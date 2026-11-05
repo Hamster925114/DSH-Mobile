@@ -51,9 +51,35 @@ APK 输出：`app\build\outputs\apk\debug\app-debug.apk`。
 4. 完整重启 DSH。
 5. 在电脑浏览器打开 `http://<bind-ip>:53985/mobile/pair`，页面会为每种连接显示二维码和同一个 16 位配对码。
 
+### 2.2 固定端口
+
+DSH 重启后默认可能换端口，Tailscale Serve 仍指向旧端口时，手机会显示 `127.0.0.1 拒绝连接`。
+
+在桌面 profile 的 `cordis.patch.yml` 顶部固定：
+
+```yaml
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 53985
+```
+
+然后让 Serve 指向同一端口：
+
+```powershell
+tailscale serve --bg http://127.0.0.1:53985
+```
+
+验证：
+
+```powershell
+tailscale serve status
+curl.exe -I https://<machine>.<tailnet>.ts.net/mobile/hello
+```
+
 > 如果页面顶部出现黄色警告，说明当前没有手机可达的地址：DSH 绑定的是回环地址。先改 `webserver.host` 或配置 `endpoints`，再重启 DSH。
 
-### 2.2 手机端
+### 2.3 手机端
 
 1. 打开 DSH Mobile。
 2. 在“连接方式”里选局域网 / Tailscale / frp + VPS；也可以点“连接管理”先编辑地址。
@@ -74,14 +100,14 @@ POST {base}/api/session/list     // {"args":{"_request":{}}}
 
 Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应的连接槽位，下次启动直接进主页。三种连接使用不同 Host，Cookie 分开；每种第一次使用都要配对一次，之后在「连接管理」里切换即可。
 
-### 2.3 地址格式
+### 2.4 地址格式
 
 - 可以省略 `http://` / `https://`：局域网和自定义连接默认补 `http://`，Tailscale 和 frp 默认补 `https://`；带 scheme 时以输入为准。
 - 可以带路径前缀（反代把 DSH 挂在子路径时），例如 `https://example.com/dsh`。
 - 不能带 query / fragment。
 - 配对码一次性，默认 120 秒；过期后桌面页刷新会生成新码。
 
-### 2.4 离开电脑后如何连接
+### 2.5 离开电脑后如何连接
 
 **不需要每次扫码。** 扫码只用于首次建立 Cookie；之后打开 App 会直接读取已保存的连接和 Cookie。
 
@@ -202,6 +228,7 @@ app/src/main/java/com/dshmobile/app/
 | 403 / Host 不匹配 | DSH `connection.trustedHosts` 加域名，或反代统一 Host |
 | 配对 400 `unknown-base` | 把该地址加入 bridge 的 `endpoints` 允许列表，重启 DSH |
 | 配对页 404 | 配对页只允许本机访问；用电脑打开 `http://<bind-ip>:53985/mobile/pair` |
+| `127.0.0.1 拒绝连接` / `ERR_CONNECTION_REFUSED` | DSH 重启后端口变了，但 Tailscale Serve 仍指旧端口；`tailscale serve status` 确认，再执行 `tailscale serve --bg http://127.0.0.1:53985` |
 | WebView 白屏 | 设置里“重新加载”；看 logcat 的 `chromium` / `DshApi` |
 | 通知不出现 | Android 13+ 通知权限；设置里开关；`dsh_events` 渠道 |
 | 扫码没反应 | 相机权限；模拟器无相机时用手动输入 |
