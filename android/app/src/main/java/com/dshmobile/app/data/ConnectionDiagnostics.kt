@@ -348,9 +348,10 @@ class ConnectionDiagnostics(
     }
 
     private fun probeWebSocket(target: DiagnosticTarget): DiagnosticStep {
+        // OkHttp's HttpUrl only accepts http(s); newWebSocket upgrades these
+        // to ws(s) itself. Do not set scheme("ws") here.
         val wsUrl = target.baseUrl.toHttpUrlOrNull()
             ?.newBuilder()
-            ?.scheme(if (target.secure) "wss" else "ws")
             ?.addPathSegments("api/remote.mux")
             ?.build()
             ?: return DiagnosticStep(

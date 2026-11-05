@@ -1,5 +1,8 @@
 package com.dshmobile.app.data
 
+import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -34,5 +37,37 @@ class ConnectionDiagnosticsTest {
         assertTrue(hintForHttpStatus(403).orEmpty().contains("trustedHosts"))
         assertTrue(hintForHttpStatus(404).orEmpty().contains("bridge"))
         assertNull(hintForHttpStatus(200))
+    }
+
+    @Test
+    fun runsHttpAndApiStepsAgainstMockServer() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"version":"0.0.1","dsh":"0.2.1-rc.3"}"""),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"result":{"ok":true,"value":[]}}"""),
+        )
+        server.start()
+        try {
+            val diagnostics = ConnectionDiagnostics(cookieLookup = { "dsh-auth=test" })
+            val steps = diagnostics.run(server.url("/").toString())
+            val byId = steps.associateBy { it.id }
+            assertEquals(DiagnosticStatus.PASS, byId.getValue("url").status)
+            assertEquals(DiagnosticStatus.PASS, byId.getValue("dns").status)
+            assertEquals(DiagnosticStatus.PASS, byId.getValue("tcp").status)
+            assertEquals(DiagnosticStatus.SKIP, byId.getValue("tls").status)
+            assertEquals(DiagnosticStatus.PASS, byId.getValue("http").status)
+            assertEquals(DiagnosticStatus.PASS, byId.getValue("cookie").status)
+            assertEquals(DiagnosticStatus.PASS, byId.getValue("api").status)
+        } finally {
+            server.shutdown()
+        }
     }
 }
