@@ -162,6 +162,10 @@ class DshEventService : Service() {
                 // Current mux frames carry the item in `value`; accept `item`
                 // too so older DSH builds keep working.
                 val item = (root["value"] ?: root["item"])?.jsonObject ?: return
+                Log.i(
+                    TAG,
+                    "event ${item["type"]?.jsonPrimitive?.contentOrNull} ${item["event"]?.jsonPrimitive?.contentOrNull}",
+                )
                 when (item["type"]?.jsonPrimitive?.contentOrNull) {
                     "ready" -> {
                         clientId = item["clientId"]?.jsonPrimitive?.contentOrNull
