@@ -59,7 +59,9 @@ class DshEventService : Service() {
                 put("type", "open")
                 put("streamId", "events")
                 put("endpoint", "\$events")
-                put("payload", buildJsonObject { })
+                // The gateway requires exactly one plain-object args field,
+                // even for the forwarded $events stream.
+                put("payload", buildJsonObject { put("args", buildJsonObject { }) })
             }
             webSocket.send(frame.toString())
             updateServiceNotification("已连接，等待事件")
@@ -154,7 +156,9 @@ class DshEventService : Service() {
         val root = json.parseToJsonElement(text).jsonObject
         when (root["type"]?.jsonPrimitive?.contentOrNull) {
             "item" -> {
-                val item = root["item"]?.jsonObject ?: return
+                // Current mux frames carry the item in `value`; accept `item`
+                // too so older DSH builds keep working.
+                val item = (root["value"] ?: root["item"])?.jsonObject ?: return
                 when (item["type"]?.jsonPrimitive?.contentOrNull) {
                     "ready" -> {
                         clientId = item["clientId"]?.jsonPrimitive?.contentOrNull

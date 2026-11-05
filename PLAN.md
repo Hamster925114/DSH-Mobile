@@ -507,13 +507,13 @@ Cookie: ...
 - [x] 用 Node 脚本完成 `token → Cookie → session/list`（2026-11-04 实测 5 个会话）。
 - [x] 用 Tailscale（或 frp）从手机访问桌面 `http://127.0.0.1:53985`。
 - [x] 解决 Host 校验：`trustedHosts` 或反代改写 Host。
-- [ ] 用 `websocat`/Node 打开 `$events`，确认能收到 `api-session/status`。
+- [x] 用 `websocat`/Node 打开 `$events`，确认能收到 `api-session/status`（实测收到 `ready`；帧字段为 `value`，并已修正前台服务解析）。
 - [x] 手机 Chrome 打开 SPA，确认登录、会话、输入、文件预览可用。
 - [ ] 桌面重启后，旧 Cookie 仍可用（验证 30 天持久性）。
 - [x] 记录实际端口、Host 校验行为、WebSocket 是否被代理缓冲。
 
 **已完成**：bridge 插件、单元测试（14 个，含多 endpoint 二维码、本机配对页限制、反代拒绝、base 选择）、配对/认证/RPC 冒烟测试。  
-**实测**：`tailscale serve --bg http://127.0.0.1:53985` + `trustedHosts: hamster.tail52bb47.ts.net`；DSH Mobile 通过 Tailscale 完成配对、进入会话、加载 Fairy 皮肤。
+**实测**：`tailscale serve --bg http://127.0.0.1:53985` + `trustedHosts: hamster.tail52bb47.ts.net`；DSH Mobile 通过 Tailscale 完成配对、进入会话、加载 Fairy 皮肤。`$events` 用修正后的 `payload.args` 订阅成功，收到 `{"type":"item","value":{"type":"ready"}}`。
 **交付**：`docs/m0-setup.md`、`docs/protocol-notes.md`；`docs/spike-report.md` 待补。
 
 **验收**：手机在 4G 下能打开会话并收到一次模型回复。（已实际使用 Tailscale 完成）
