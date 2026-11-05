@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import android.webkit.CookieManager
 import androidx.core.app.NotificationCompat
 import com.dshmobile.app.MainActivity
@@ -64,6 +65,7 @@ class DshEventService : Service() {
                 put("payload", buildJsonObject { put("args", buildJsonObject { }) })
             }
             webSocket.send(frame.toString())
+            Log.i(TAG, "events socket open")
             updateServiceNotification("已连接，等待事件")
         }
 
@@ -73,6 +75,7 @@ class DshEventService : Service() {
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (socket !== webSocket) return
+            Log.w(TAG, "events socket failed: ${t.message} http=${response?.code}")
             socket = null
             if (response?.code == 401) {
                 notifyEvent("登录已失效", "请重新配对 DSH Mobile")
@@ -162,6 +165,7 @@ class DshEventService : Service() {
                 when (item["type"]?.jsonPrimitive?.contentOrNull) {
                     "ready" -> {
                         clientId = item["clientId"]?.jsonPrimitive?.contentOrNull
+                        Log.i(TAG, "events ready clientId=$clientId")
                         updateServiceNotification("已连接 DSH")
                     }
 
@@ -185,6 +189,7 @@ class DshEventService : Service() {
                 val message = root["error"]?.jsonObject?.get("message")
                     ?.jsonPrimitive?.contentOrNull
                     ?: "事件通道错误"
+                Log.w(TAG, "events error: $message")
                 notifyEvent("连接错误", message)
             }
         }
@@ -258,6 +263,7 @@ class DshEventService : Service() {
     }
 
     companion object {
+        private const val TAG = "DshEventService"
         const val EXTRA_BASE_URL = "base_url"
 
         private const val CHANNEL_SERVICE = "dsh_service"
