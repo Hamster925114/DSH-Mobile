@@ -405,6 +405,14 @@ private fun injectMobileCss(view: WebView?) {
             /* Once the skin reaches its dock phase, make sure its full-screen
                stage cannot keep covering the app if a WebView transition stalls. */
             .fz3-layer[data-phase="dock"] .fz3-screen { display: none !important; }
+            /* DSH question/choice overlays can also collapse to a zero-height
+               line in Android WebView; give them a usable scroll area. */
+            [data-conversation-composer-overlay],
+            [class*="M4PAiq"],
+            [class*="Fu0XRq"] {
+              max-height: calc(100% - 96px) !important;
+              overflow-y: auto !important;
+            }
             /* DSH settings on a phone: stack nav above content instead of
                squeezing the 800px desktop panel into 372px. */
             @media (max-width: 700px) {
@@ -504,6 +512,28 @@ private fun injectMobileCss(view: WebView?) {
           window.addEventListener('resize', fitDialogs);
           setInterval(fitDialogs, 300);
           new MutationObserver(fitDialogs).observe(document.body, { childList: true, subtree: true });
+
+          /* The ask-user-question panel is a composer overlay. It can be
+             present but zero-height before its content is painted. */
+          function fitQuestionOverlay() {
+            var overlays = document.querySelectorAll(
+              '[data-conversation-composer-overlay], [class*="M4PAiq"], [class*="Fu0XRq"]'
+            );
+            overlays.forEach(function(el) {
+              if (el.dataset.dshMobileQuestionFixed === '1') return;
+              var rect = el.getBoundingClientRect();
+              if (rect.width < 20 || rect.height > 20) return;
+              if (!(el.innerText || '').trim()) return;
+              el.dataset.dshMobileQuestionFixed = '1';
+              el.style.setProperty('min-height', '160px', 'important');
+              el.style.setProperty('max-height', Math.min(560, window.innerHeight - 120) + 'px', 'important');
+              el.style.setProperty('overflow-y', 'auto', 'important');
+            });
+          }
+          fitQuestionOverlay();
+          window.addEventListener('resize', fitQuestionOverlay);
+          setInterval(fitQuestionOverlay, 300);
+          new MutationObserver(fitQuestionOverlay).observe(document.body, { childList: true, subtree: true });
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
