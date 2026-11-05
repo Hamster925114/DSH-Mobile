@@ -106,6 +106,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | 主页 | WebView 加载 `{base}/`，JS/DOM storage、Cookie、文件选择、下载、外链跳浏览器、返回键 |
 | 移动适配 | 注入基础 CSS（隐藏滚动条、输入框 16px 防 iOS 缩放、safe-area） |
 | 设置 | 当前连接、刷新会话数、重新加载、连接管理（含诊断入口）、清除配对 |
+| M2 底部导航 | 会话 / 文件 / 终端 / 设置，调用 WebView 现有入口 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型 |
 | 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics` 共 22 个 JVM 单元测试 |
@@ -140,7 +141,7 @@ app/src/main/java/com/dshmobile/app/
     PairingScreen.kt           # 配对 + 连接方式选择
     ConnectionsScreen.kt       # 连接管理（添加/编辑/测试/诊断/删除/切换）
     ConnectionDiagnosticsDialog.kt # 诊断结果弹层
-    HomeScreen.kt              # WebView + 文件选择/下载/设置浮层
+    HomeScreen.kt              # WebView + 文件选择/下载/设置浮层 + M2 底部导航（会话/文件/终端/设置）
     SettingsSheet.kt           # 原生设置 Dialog
     theme/Theme.kt
 ```

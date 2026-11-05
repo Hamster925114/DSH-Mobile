@@ -25,23 +25,30 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,6 +61,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -315,6 +323,13 @@ fun HomeScreen(
                 }
             }
         }
+
+        MobileBottomBar(
+            onChat = { clickMobileTarget(webView, "chat") },
+            onFiles = { clickMobileTarget(webView, "files") },
+            onTerminal = { clickMobileTarget(webView, "terminal") },
+            onSettings = { showSettings = true },
+        )
     }
 
     if (showSettings) {
@@ -351,6 +366,134 @@ fun HomeScreen(
             onDismiss = { showSettings = false },
         )
     }
+}
+
+@Composable
+private fun MobileBottomBar(
+    onChat: () -> Unit,
+    onFiles: () -> Unit,
+    onTerminal: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    Surface(tonalElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(58.dp),
+        ) {
+            MobileNavItem(
+                icon = Icons.Default.Chat,
+                label = "会话",
+                onClick = onChat,
+                modifier = Modifier.weight(1f),
+            )
+            MobileNavItem(
+                icon = Icons.Default.Folder,
+                label = "文件",
+                onClick = onFiles,
+                modifier = Modifier.weight(1f),
+            )
+            MobileNavItem(
+                icon = Icons.Default.Terminal,
+                label = "终端",
+                onClick = onTerminal,
+                modifier = Modifier.weight(1f),
+            )
+            MobileNavItem(
+                icon = Icons.Default.Settings,
+                label = "设置",
+                onClick = onSettings,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MobileNavItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(21.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+private fun clickMobileTarget(view: WebView?, target: String) {
+    val script = """
+        (function() {
+          var wanted = '$target';
+          function clickText(text) {
+            var leaves = [];
+            document.querySelectorAll('*').forEach(function(el) {
+              if (el.children.length === 0 && (el.textContent || '').trim() === text) {
+                leaves.push(el);
+              }
+            });
+            for (var i = 0; i < leaves.length; i++) {
+              var button = leaves[i].closest('button,[role="button"]');
+              if (button) {
+                button.click();
+                return true;
+              }
+            }
+            return false;
+          }
+          if (wanted === 'chat') {
+            var tabs = document.querySelectorAll('[role="tab"]');
+            for (var i = 0; i < tabs.length; i++) {
+              if ((tabs[i].innerText || '').trim() === 'Chat') {
+                tabs[i].click();
+                return;
+              }
+            }
+            if (tabs.length > 0) tabs[0].click();
+            return;
+          }
+          function clickTarget() {
+            if (wanted === 'files') {
+              return clickText('Workspace files');
+            }
+            var terminal = document.querySelector('[aria-label^="New terminal"]');
+            if (terminal) {
+              terminal.click();
+              return true;
+            }
+            return false;
+          }
+          if (clickTarget()) return;
+          var newTab = document.querySelector('[aria-label="New tab"]');
+          if (newTab) {
+            newTab.click();
+            setTimeout(function() { clickTarget(); }, 450);
+            return;
+          }
+          var open = document.querySelector('[aria-label="Open right sidebar"]');
+          if (open) open.click();
+          setTimeout(function() { clickTarget(); }, 600);
+        })();
+    """.trimIndent()
+    view?.evaluateJavascript(script, null)
 }
 
 private fun logWebViewDiagnostics(view: WebView?) {
