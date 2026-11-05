@@ -410,6 +410,18 @@ private fun injectMobileCss(view: WebView?) {
             textarea, input { font-size: 16px !important; }
           `;
           document.head.appendChild(style);
+
+          function fitShell() {
+            var h = window.innerHeight + 'px';
+            [document.documentElement, document.body, document.getElementById('root')].forEach(function(el) {
+              if (!el) return;
+              el.style.setProperty('height', h, 'important');
+              el.style.setProperty('min-height', h, 'important');
+            });
+          }
+          fitShell();
+          window.addEventListener('resize', fitShell);
+          setTimeout(fitShell, 800);
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
