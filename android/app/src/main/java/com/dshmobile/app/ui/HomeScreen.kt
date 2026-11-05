@@ -422,6 +422,40 @@ private fun injectMobileCss(view: WebView?) {
           fitShell();
           window.addEventListener('resize', fitShell);
           setTimeout(fitShell, 800);
+
+          /* Android WebView can report 100vh as 0. Menus sized with
+             max-height:min(360px, 100vh - 96px) then collapse to 0px.
+             Give such menus a real height and keep them anchored to the trigger. */
+          function positionMenu(menu) {
+            var trigger = document.querySelector('[aria-expanded="true"]');
+            var h = menu.getBoundingClientRect().height;
+            if (!trigger || h < 20) return;
+            var tr = trigger.getBoundingClientRect();
+            var top = tr.top - h - 8;
+            if (top < 8) top = tr.bottom + 8;
+            if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
+            menu.style.setProperty('top', Math.max(8, top) + 'px', 'important');
+          }
+
+          function scanMenus() {
+            document.querySelectorAll('[role="menu"]').forEach(function(menu) {
+              if (menu.dataset.dshMobileMenuFixed === '1') return;
+              var cs = getComputedStyle(menu);
+              if (parseFloat(cs.maxHeight) !== 0) return;
+              menu.dataset.dshMobileMenuFixed = '1';
+              menu.style.setProperty('max-height', '360px', 'important');
+              requestAnimationFrame(function() {
+                requestAnimationFrame(function() { positionMenu(menu); });
+              });
+              if (window.ResizeObserver) {
+                var ro = new ResizeObserver(function() { positionMenu(menu); });
+                ro.observe(menu);
+                menu.__dshMobileMenuRO = ro;
+              }
+            });
+          }
+          setInterval(scanMenus, 300);
+          new MutationObserver(scanMenus).observe(document.body, { childList: true, subtree: true });
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)
