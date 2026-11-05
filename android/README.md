@@ -64,10 +64,10 @@ DSH 重启后默认可能换端口，Tailscale Serve 仍指向旧端口时，手
     port: 53985
 ```
 
-然后让 Serve 指向同一端口：
+**M3 起 Serve 指向设备代理，而不是 DSH 本身**。DSH 仍监听 `53985`，bridge 在同机 `53986` 上做设备令牌门禁：
 
 ```powershell
-tailscale serve --bg http://127.0.0.1:53985
+tailscale serve --bg http://127.0.0.1:53986
 ```
 
 验证：
@@ -76,6 +76,8 @@ tailscale serve --bg http://127.0.0.1:53985
 tailscale serve status
 curl.exe -I https://<machine>.<tailnet>.ts.net/mobile/hello
 ```
+
+`/mobile/hello` 允许未配对访问并应返回 `200`；`/` 未配对时应返回 `401`，说明设备门禁已生效。
 
 > 如果页面顶部出现黄色警告，说明当前没有手机可达的地址：DSH 绑定的是回环地址。先改 `webserver.host` 或配置 `endpoints`，再重启 DSH。
 
@@ -89,16 +91,17 @@ curl.exe -I https://<machine>.<tailnet>.ts.net/mobile/hello
 App 会：
 
 ```text
-POST {base}/mobile/pair          {code, base}
-  -> {url}                       // 带 launch token 的 URL
+POST {base}/mobile/pair          {code, base, deviceName, platform}
+  -> {url, deviceId, deviceToken}
+POST/GET {base}/mobile/pair      // 通过设备代理；配对路径允许未配对访问
 GET  {url}                       // 303 + Set-Cookie
-  -> 写入 Android CookieManager
+  -> 写入 Android CookieManager + Keystore 中的 deviceToken
 GET  {base}/mobile/hello         // 健康检查
 POST {base}/api/session/list     // {"args":{"_request":{}}}
   -> 读取会话数量
 ```
 
-Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应的连接槽位，下次启动直接进主页。三种连接使用不同 Host，Cookie 分开；每种第一次使用都要配对一次，之后在「连接管理」里切换即可。
+Cookie 同时供 WebView 和 OkHttp 使用；设备令牌额外保存在 Android Keystore，用于 Cookie 过期后的静默续期和撤销校验。成功后 base URL 保存到对应的连接槽位，下次启动直接进主页。
 
 ### 2.4 地址格式
 
@@ -114,10 +117,20 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 - Cookie 默认 30 天，签名密钥在桌面 `$DSH_HOME/.credentials.yaml`，DSH 重启后通常仍然有效。
 - App 被关闭、手机重启、Tailscale 重新连接，都**不需要重新扫码**。
 - 如果 App 启动时 Tailscale 还没连上，会显示「连接暂时失败」；先连 Tailscale，再点 **「重试已保存连接（无需扫码）」**。
-- 只有以下情况需要重新配对：Cookie 过期、App 数据被清除/卸载、DSH 凭据重置、连接域名变化。
+- 只有以下情况需要重新配对：Cookie 过期且设备令牌也过期/被撤销、App 数据被清除/卸载、DSH 凭据重置、连接域名变化。
 - 确实需要重新配对又不在电脑旁时：用 Tailscale SSH / 远程桌面打开桌面配对页，读取 16 位配对码，在 App 里**手动输入地址 + 配对码**；不一定要扫码。
 
-> 当前 Cookie 是 30 天固定有效期，没有静默续期；长期离开电脑前，建议确认配对仍有效。设备令牌/远程续期在 M3 处理。
+> M3 起每个设备有独立令牌（Android Keystore 加密保存）。Cookie 过期时 App 会用 `/mobile/token/exchange` 自动续期，不需要重新扫码；设备被撤销后下一次请求立即返回 401。
+
+### 2.6 设备管理与撤销
+
+- 详细协议见 [docs/device-tokens.md](../docs/device-tokens.md)。
+- App：设置 → **设备管理（查看 / 撤销设备）**。
+- 桌面：设备列表保存在 `$DSH_HOME/mobile/devices.json`，只写令牌 SHA-256，不保存明文。
+- 撤销一台设备后，它下一次 HTTP 请求或 WebSocket 连接会被 `53986` 门禁拒绝；当前设备撤销后会清空 Cookie 和 Keystore 令牌并回到配对页。
+- 设备管理接口要求桌面 loopback 或有效 DSH owner Cookie；单独持有 device token 不能撤销其他设备。
+
+> 首次从旧版本升级到 M3：Serve 切到 `53986` 后，旧 Cookie 没有设备令牌，手机会显示 401/要求重新配对；这是预期的迁移步骤。重新扫一次码即可。
 
 ---
 
@@ -141,9 +154,11 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | M2 文件/终端 | 底栏通过 `@dsh-mobile/client-ui` 的 `sidebarRight.openTab()` 桥直接打开文件/终端面板；全屏面板即使 `data-rightbar-collapsed` 也保持显示（用 `data-sidebar-right-open` 区分关闭的图标栏）；文件选择支持多选 + 拍照，选中文件先缓存到 `shared/` 再由 `FileProvider` 提供稳定 URI；下载完成通知含“打开/分享” |
 | M2 剪贴板 | 底栏“粘贴”把剪贴板图片转 JPEG/Base64，合成 `ClipboardEvent` 填入 DSH 输入框 |
 | M2 主题 | 系统亮/暗同步状态栏/导航栏图标、WebView 背景色；DSH 主题跟随系统 |
+| M3 设备令牌 | 配对签发独立 deviceToken（设备端 Android Keystore 加密）；`/mobile/token/exchange` 静默续期；`53986` 设备代理对 HTTP/WebSocket 做门禁 |
+| M3 设备管理 | App 设置 → 设备管理：列表/撤销；桌面 `devices.json` 只存 SHA-256；撤销后下一次请求立即 401 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误/完成本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型；下载完成独立渠道 |
-| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试 |
+| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试；bridge 22 个 Node 测试（含设备令牌与代理门禁） |
 
 ### 3.1 明确不做（M1）
 
@@ -166,7 +181,8 @@ app/src/main/java/com/dshmobile/app/
     PairingPayload.kt          # 二维码/深链 JSON 解析
     ConnectionProfile.kt       # 连接槽位（LAN/Tailscale/frp/CUSTOM）
     SettingsRepository.kt      # DataStore：连接列表、当前连接、通知开关
-    DshApi.kt                  # 配对、Cookie、hello、session/list RPC
+    DeviceTokenStore.kt        # Android Keystore AES/GCM 加密设备令牌
+    DshApi.kt                  # 配对、Cookie、设备令牌、设备管理、RPC
     ConnectionDiagnostics.kt   # DNS/TCP/TLS/HTTP/Cookie/API/WebSocket 诊断
   service/
     DshEventService.kt         # 前台 $events WebSocket + 审批/错误/完成通知
@@ -179,6 +195,7 @@ app/src/main/java/com/dshmobile/app/
     ConnectionDiagnosticsDialog.kt # 诊断结果弹层
     HomeScreen.kt              # WebView + 文件选择/下载/设置浮层 + M2 底部导航（会话/文件/终端/设置）
     SettingsSheet.kt           # 原生设置 Dialog
+    DevicesDialog.kt           # M3 设备列表/撤销
     theme/Theme.kt
 ```
 
@@ -224,6 +241,8 @@ app/src/main/java/com/dshmobile/app/
 - **深链冷启动慢**：Tailscale 首次加载 DSH 插件包可能 20–30 秒；App 会最多等 60 秒，超时提示手动打开。
 - **剪贴板只支持图片**：文本仍用系统粘贴；图片走合成 `ClipboardEvent`，若 DSH 前端改版可能需要更新选择器。
 - **无 GMS**：不依赖 FCM，因此没有真正的离线推送。
+- **设备门禁只保护代理入口**：当前 `53986` 代理绑定回环，只保护 Tailscale 入口；直连局域网 `53985` 的路径不经过设备令牌校验。
+- **旧设备迁移**：M3 前配对的设备没有 deviceToken；切到 `53986` 后会被 401 拒绝，需要重新扫一次码。
 
 ---
 
@@ -240,7 +259,8 @@ app/src/main/java/com/dshmobile/app/
 | 403 / Host 不匹配 | DSH `connection.trustedHosts` 加域名，或反代统一 Host |
 | 配对 400 `unknown-base` | 把该地址加入 bridge 的 `endpoints` 允许列表，重启 DSH |
 | 配对页 404 | 配对页只允许本机访问；用电脑打开 `http://<bind-ip>:53985/mobile/pair` |
-| `127.0.0.1 拒绝连接` / `ERR_CONNECTION_REFUSED` | DSH 重启后端口变了，但 Tailscale Serve 仍指旧端口；`tailscale serve status` 确认，再执行 `tailscale serve --bg http://127.0.0.1:53985` |
+| `127.0.0.1 拒绝连接` / `ERR_CONNECTION_REFUSED` | DSH 重启后端口变了，但 Tailscale Serve 仍指旧端口；`tailscale serve status` 确认，再执行 `tailscale serve --bg http://127.0.0.1:53986`（M3 设备代理） |
+| 手机显示 401「DSH Mobile 已锁定」 | Serve 已切到 53986，但该手机还没有设备令牌；在桌面配对页重新扫码配对一次 |
 | WebView 白屏 | 设置里“重新加载”；看 logcat 的 `chromium` / `DshApi` |
 | 文件显示“上传失败” | 重新选择文件；当前版本会先缓存到 App 的 `shared/` 再上传。若仍失败，看 logcat 的 `DshEventService` / DSH 连接是否反复 `connection lost` |
 | 点通知没进对应会话 | 确认 DSH 页面已启动且 `@dsh-mobile/client-ui` 已加载；深链最多等 60 秒，超时会提示手动打开 |

@@ -45,7 +45,7 @@ sealed interface AppState {
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
-    private val api = DshApi()
+    private val api = DshApi(application)
     private val diagnostics = ConnectionDiagnostics(
         cookieLookup = { base ->
             runCatching {
@@ -220,6 +220,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun unpair() {
         viewModelScope.launch {
             api.clearCookies()
+            api.clearDeviceToken()
             settingsRepository.clearActivePairing()
             _activeProfileId.value = null
             _state.value = AppState.NeedsPairing()
@@ -275,9 +276,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             _state.value = AppState.Loading
+            if (api.hasDeviceToken(target.baseUrl)) {
+                if (api.validateDeviceToken(target.baseUrl) == false) {
+                    api.clearDeviceSession()
+                    _state.value = AppState.NeedsPairing(
+                        message = "这台设备已被撤销，请重新扫码配对",
+                        suggestedBaseUrl = target.baseUrl,
+                        profileId = target.id,
+                        profileLabel = target.label,
+                    )
+                    return@launch
+                }
+                if (!api.hasCookie(target.baseUrl)) {
+                    api.refreshSession(target.baseUrl)
+                }
+            }
             if (!api.hasCookie(target.baseUrl)) {
                 _state.value = AppState.NeedsPairing(
-                    message = "登录 Cookie 已失效，请重新配对",
+                    message = "登录 Cookie 已失效，且设备令牌不可用，请重新配对",
                     suggestedBaseUrl = target.baseUrl,
                     profileId = target.id,
                     profileLabel = target.label,

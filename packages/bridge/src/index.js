@@ -6,13 +6,12 @@
  * 1. Mint a short-lived, one-time pairing code at startup and write it to
  *    `$DSH_HOME/mobile/pairing.json` (and optionally show it on a loopback-only
  *    page).
- * 2. Exchange that code for the process launch token via
- *    `ctx.connection.authenticatedUrl()`. The phone then trades the token for
- *    the normal 30-day browser cookie.
- * 3. Expose `/mobile/hello` for version/port diagnostics.
- *
- * It does NOT proxy the API, does NOT store device tokens yet, and does NOT
- * implement push. Those are intentionally out of scope for M0.
+ * 2. Exchange that code for a revocable device token and the process launch URL
+ *    via `ctx.connection.authenticatedUrl()`. The phone stores the device token
+ *    and trades the launch URL for the normal 30-day browser cookie.
+ * 3. Gate phone traffic through a loopback device proxy so revoking a device
+ *    takes effect on its next HTTP or WebSocket request.
+ * 4. Expose `/mobile/hello`, `/mobile/devices`, and token refresh endpoints.
  *
  * @module @dsh-mobile/bridge
  */
@@ -22,6 +21,8 @@ import { mkdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import QRCode from 'qrcode'
+import { DeviceStore } from './devices.js'
+import { startDeviceProxy } from './proxy.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'dsh-mobile-bridge'
@@ -29,7 +30,7 @@ export const name = 'dsh-mobile-bridge'
 /** Services required before the pairing routes can be registered. */
 export const inject = ['webServer', 'connection']
 
-const VERSION = '0.0.1'
+const VERSION = '0.1.0'
 const DEFAULT_TTL_SECONDS = 120
 const MIN_TTL_SECONDS = 30
 const MAX_BODY_BYTES = 4096
@@ -190,6 +191,20 @@ function safeEqual(left, right) {
 }
 
 /**
+ * Read a device token from the Authorization or X-DSH-Device-Token headers.
+ * @param {import('node:http').IncomingMessage} req
+ * @returns {string | undefined}
+ */
+function bearerToken(req) {
+  const authorization = req.headers?.authorization
+  if (typeof authorization === 'string' && /^Bearer\s+/i.test(authorization)) {
+    return authorization.replace(/^Bearer\s+/i, '').trim()
+  }
+  const direct = req.headers?.['x-dsh-device-token']
+  return typeof direct === 'string' && direct.trim() !== '' ? direct.trim() : undefined
+}
+
+/**
  * Escape text for the local pairing page.
  * @param {unknown} value
  * @returns {string}
@@ -213,6 +228,10 @@ function escapeHtml(value) {
  *   endpoints?: Array<{ id?: string, label?: string, url: string, kind?: string }>,
  *   pairingTtlSeconds?: number,
  *   maxAttemptsPerMinute?: number,
+ *   deviceTtlDays?: number,
+ *   maxDevices?: number,
+ *   deviceProxy?: boolean,
+ *   deviceProxyPort?: number,
  * }} [config]
  */
 export async function apply(ctx, config = {}) {
@@ -230,6 +249,12 @@ export async function apply(ctx, config = {}) {
     Number.isSafeInteger(config.maxAttemptsPerMinute) && config.maxAttemptsPerMinute > 0
       ? config.maxAttemptsPerMinute
       : DEFAULT_MAX_ATTEMPTS_PER_MINUTE
+  const deviceTtlDays =
+    Number.isSafeInteger(config.deviceTtlDays) && config.deviceTtlDays > 0
+      ? config.deviceTtlDays
+      : 30
+  const maxDevices =
+    Number.isSafeInteger(config.maxDevices) && config.maxDevices > 0 ? config.maxDevices : 50
 
   let base
   try {
@@ -310,6 +335,54 @@ export async function apply(ctx, config = {}) {
   const home = process.env.DSH_HOME?.trim() || join(homedir(), '.dsh')
   const directory = join(home, 'mobile')
   const file = join(directory, 'pairing.json')
+  const devices = new DeviceStore({
+    directory,
+    ttlDays: deviceTtlDays,
+    maxDevices,
+    logger: ctx.logger,
+  })
+  await devices.load()
+
+  /** @type {{ close: () => Promise<void>, port: number } | undefined} */
+  let deviceProxy
+  const proxyEnabled = config.deviceProxy !== false
+  const proxyPort =
+    Number.isSafeInteger(config.deviceProxyPort) && config.deviceProxyPort > 0
+      ? config.deviceProxyPort
+      : Number(webServer.port) + 1
+
+  if (proxyEnabled) {
+    try {
+      deviceProxy = await startDeviceProxy({
+        targetHost: webServer.host ?? '127.0.0.1',
+        targetPort: Number(webServer.port),
+        listenPort: proxyPort,
+        store: devices,
+        logger: ctx.logger,
+      })
+      ctx.logger?.info?.(
+        `dsh-mobile-bridge: device proxy listening on 127.0.0.1:${String(deviceProxy.port)} -> ${String(webServer.host ?? '127.0.0.1')}:${String(webServer.port)}`,
+      )
+    } catch (error) {
+      ctx.logger?.warn?.(
+        `dsh-mobile-bridge: device proxy did not start (${String(error)}); Tailscale Serve should keep pointing at DSH until this is fixed`,
+      )
+      deviceProxy = undefined
+    }
+  }
+
+  ctx.effect(() => () => {
+    void deviceProxy?.close()
+    return undefined
+  }, 'dsh-mobile-bridge: device proxy')
+
+  const seenFlush = setInterval(() => {
+    void devices.flush().catch(() => {})
+  }, 30_000)
+  ctx.effect(() => () => {
+    clearInterval(seenFlush)
+    return undefined
+  }, 'dsh-mobile-bridge: device last-seen flush')
 
   let code = ''
   let expiresAt = 0
@@ -557,8 +630,6 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
       return
     }
 
-    // Burn the code before issuing the URL: a retry must not replay it.
-    consumed = true
     let url
     try {
       url = connection.authenticatedUrl(`${requestedBase}/`)
@@ -569,7 +640,236 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
       })
       return
     }
-    sendJson(res, 200, { url, base: requestedBase })
+
+    let issued
+    try {
+      issued = await devices.register({
+        name: body?.deviceName,
+        platform: body?.platform,
+        appVersion: body?.appVersion,
+      })
+    } catch (error) {
+      if (error instanceof Error && error.message === 'device-limit') {
+        sendJson(res, 429, {
+          error: 'device-limit',
+          hint: 'revoke an old device on the desktop device page before pairing another one',
+        })
+        return
+      }
+      sendJson(res, 500, {
+        error: 'device-store-failed',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    // Burn the code only after the device record exists and the launch URL is
+    // ready; a failed registration must not consume a valid pairing code.
+    consumed = true
+    sendJson(res, 200, {
+      url,
+      base: requestedBase,
+      deviceId: issued.device.id,
+      deviceToken: issued.token,
+      deviceName: issued.device.name,
+      deviceExpiresAt: issued.device.expiresAt,
+    })
+  }
+
+  /**
+   * Admin routes are reachable from the desktop loopback page or from a phone
+   * that already holds a valid DSH owner cookie. A device token alone is never
+   * enough to list or revoke other devices.
+   * @param {import('node:http').IncomingMessage} req
+   * @returns {boolean}
+   */
+  function isAdminRequest(req) {
+    if (isLocalPairingRequest(req)) return true
+    try {
+      return typeof connection.requestRejection === 'function'
+        ? connection.requestRejection(req) === undefined
+        : false
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * List devices for the management screen.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleDevices(req, res) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { allow: 'GET' })
+      res.end()
+      return
+    }
+    if (!isAdminRequest(req)) {
+      sendJson(res, 403, { error: 'forbidden' })
+      return
+    }
+    try {
+      sendJson(res, 200, {
+        devices: await devices.list(),
+        proxyEnabled: deviceProxy !== undefined,
+        proxyPort: deviceProxy?.port ?? null,
+      })
+    } catch (error) {
+      sendJson(res, 500, { error: 'device-store-failed', message: String(error) })
+    }
+  }
+
+  /**
+   * Revoke one device. Revocation is checked by the device proxy before every
+   * HTTP request and WebSocket upgrade, so it takes effect immediately.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleRevokeDevice(req, res) {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST' })
+      res.end()
+      return
+    }
+    if (!isAdminRequest(req)) {
+      sendJson(res, 403, { error: 'forbidden' })
+      return
+    }
+    let body
+    try {
+      body = await readJson(req)
+    } catch {
+      sendJson(res, 400, { error: 'bad-json' })
+      return
+    }
+    const id = body !== null && typeof body === 'object' ? body.id : undefined
+    if (typeof id !== 'string' || id === '') {
+      sendJson(res, 400, { error: 'missing-device-id' })
+      return
+    }
+    const revoked = await devices.revoke(id)
+    if (!revoked) {
+      sendJson(res, 404, { error: 'unknown-device' })
+      return
+    }
+    sendJson(res, 200, { ok: true, id })
+  }
+
+  /**
+   * Rename a device from the management screen.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleRenameDevice(req, res) {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST' })
+      res.end()
+      return
+    }
+    if (!isAdminRequest(req)) {
+      sendJson(res, 403, { error: 'forbidden' })
+      return
+    }
+    let body
+    try {
+      body = await readJson(req)
+    } catch {
+      sendJson(res, 400, { error: 'bad-json' })
+      return
+    }
+    const id = body !== null && typeof body === 'object' ? body.id : undefined
+    if (typeof id !== 'string' || id === '') {
+      sendJson(res, 400, { error: 'missing-device-id' })
+      return
+    }
+    const device = await devices.rename(id, body?.name)
+    if (device === null) {
+      sendJson(res, 404, { error: 'unknown-device' })
+      return
+    }
+    sendJson(res, 200, { ok: true, device })
+  }
+
+  /**
+   * Validate a device token without issuing a browser session.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleDeviceMe(req, res) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { allow: 'GET' })
+      res.end()
+      return
+    }
+    const token = bearerToken(req)
+    const device = await devices.verify(token)
+    if (device === null) {
+      sendJson(res, 401, { error: 'device-invalid' })
+      return
+    }
+    await devices.flush().catch(() => {})
+    sendJson(res, 200, { ok: true, device })
+  }
+
+  /**
+   * Exchange a valid device token for a fresh DSH launch URL. This is used
+   * when the browser cookie expired but the device is still trusted.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleTokenExchange(req, res) {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST' })
+      res.end()
+      return
+    }
+    const token = bearerToken(req)
+    const device = await devices.verify(token)
+    if (device === null) {
+      sendJson(res, 401, { error: 'device-invalid' })
+      return
+    }
+    let body = {}
+    try {
+      body = await readJson(req)
+    } catch {
+      body = {}
+    }
+    const requested = body !== null && typeof body === 'object' ? body.base : undefined
+    let endpointList
+    try {
+      endpointList = endpoints()
+    } catch {
+      endpointList = []
+    }
+    let selected = endpointList[0]?.url
+    if (typeof requested === 'string' && requested.trim() !== '') {
+      try {
+        const normalized = normalizeBaseUrl(requested.trim())
+        selected = endpointList.find((entry) => entry.url === normalized)?.url
+      } catch {
+        selected = undefined
+      }
+    }
+    if (selected === undefined) {
+      sendJson(res, 400, { error: 'unknown-base' })
+      return
+    }
+    let url
+    try {
+      url = connection.authenticatedUrl(`${selected}/`)
+    } catch (error) {
+      sendJson(res, 500, { error: 'auth-unavailable', message: String(error) })
+      return
+    }
+    const renewed = await devices.renew(device.id)
+    sendJson(res, 200, {
+      url,
+      base: selected,
+      deviceId: device.id,
+      deviceExpiresAt: renewed?.expiresAt ?? device.expiresAt,
+    })
   }
 
   /**
@@ -597,6 +897,8 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
       port: webServer.port,
       base: endpointList[0]?.url ?? currentBase(),
       endpoints: endpointList,
+      deviceProxy: deviceProxy === undefined ? null : { port: deviceProxy.port },
+      deviceTtlDays,
       now: new Date().toISOString(),
     })
   }
@@ -620,5 +922,45 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
   ctx.effect(
     () => webServer.register({ kind: 'exact', path: '/mobile/hello', handler: handleHello }),
     'dsh-mobile-bridge: /mobile/hello',
+  )
+  ctx.effect(
+    () => webServer.register({ kind: 'exact', path: '/mobile/devices', handler: handleDevices }),
+    'dsh-mobile-bridge: /mobile/devices',
+  )
+  ctx.effect(
+    () =>
+      webServer.register({
+        kind: 'exact',
+        path: '/mobile/devices/revoke',
+        handler: handleRevokeDevice,
+      }),
+    'dsh-mobile-bridge: /mobile/devices/revoke',
+  )
+  ctx.effect(
+    () =>
+      webServer.register({
+        kind: 'exact',
+        path: '/mobile/devices/rename',
+        handler: handleRenameDevice,
+      }),
+    'dsh-mobile-bridge: /mobile/devices/rename',
+  )
+  ctx.effect(
+    () =>
+      webServer.register({
+        kind: 'exact',
+        path: '/mobile/device/me',
+        handler: handleDeviceMe,
+      }),
+    'dsh-mobile-bridge: /mobile/device/me',
+  )
+  ctx.effect(
+    () =>
+      webServer.register({
+        kind: 'exact',
+        path: '/mobile/token/exchange',
+        handler: handleTokenExchange,
+      }),
+    'dsh-mobile-bridge: /mobile/token/exchange',
   )
 }

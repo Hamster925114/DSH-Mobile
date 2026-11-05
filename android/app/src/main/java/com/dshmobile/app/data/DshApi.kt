@@ -1,5 +1,7 @@
 package com.dshmobile.app.data
 
+import android.content.Context
+import android.os.Build
 import android.webkit.CookieManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,6 +36,18 @@ data class PairOutcome(
     val baseUrl: String,
     val sessionCount: Int,
     val hello: DshHello,
+    val deviceId: String? = null,
+)
+
+data class DeviceInfo(
+    val id: String,
+    val name: String,
+    val platform: String,
+    val appVersion: String,
+    val createdAt: String,
+    val lastSeenAt: String?,
+    val expiresAt: String,
+    val revoked: Boolean,
 )
 
 sealed interface PairResult {
@@ -50,7 +64,9 @@ sealed interface PairResult {
  * The cookie lives in Android's CookieManager so the WebView and OkHttp share
  * the same login state.
  */
-class DshApi {
+class DshApi(private val context: Context) {
+    private val deviceTokens = DeviceTokenStore(context)
+
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -74,10 +90,26 @@ class DshApi {
             val pairBody = buildJsonObject {
                 put("code", code)
                 put("base", base)
+                put("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+                put("platform", "android")
+                put("appVersion", "0.1.0")
             }
             val pairJson = postJson("$base/mobile/pair", pairBody)
             val tokenUrl = pairJson["url"]?.jsonPrimitive?.contentOrNull
                 ?: throw IOException("配对响应缺少 url")
+            val deviceToken = pairJson["deviceToken"]?.jsonPrimitive?.contentOrNull
+            val deviceId = pairJson["deviceId"]?.jsonPrimitive?.contentOrNull
+
+            if (!deviceToken.isNullOrBlank() && !deviceId.isNullOrBlank()) {
+                // The proxy authenticates every subsequent request with this
+                // cookie. Set it before the first DSH request so the pairing
+                // redirect never hits the gate without a device identity.
+                CookieManager.getInstance().setCookie(
+                    "$base/",
+                    "dsh_mobile_device=$deviceToken; Path=/; SameSite=Lax",
+                )
+                deviceTokens.save(base, deviceId, deviceToken)
+            }
 
             client.newCall(Request.Builder().url(tokenUrl).get().build()).execute().use { response ->
                 if (response.code !in 200..399) {
@@ -98,7 +130,7 @@ class DshApi {
 
             val hello = getHello(base)
             val count = sessionCountBlocking(base)
-            PairResult.Success(PairOutcome(base, count, hello))
+            PairResult.Success(PairOutcome(base, count, hello, deviceId))
         } catch (error: Exception) {
             val message = error.message ?: "配对失败"
             PairResult.Failure(
@@ -123,6 +155,138 @@ class DshApi {
         val base = DshUrl.normalize(baseUrl)
         !CookieManager.getInstance().getCookie("$base/").isNullOrBlank()
     }.getOrDefault(false)
+
+    fun hasDeviceToken(baseUrl: String): Boolean = runCatching {
+        deviceTokens.load(DshUrl.normalize(baseUrl)) != null
+    }.getOrDefault(false)
+
+    fun currentDeviceId(baseUrl: String): String? = runCatching {
+        deviceTokens.load(DshUrl.normalize(baseUrl))?.deviceId
+    }.getOrNull()
+
+    fun clearDeviceToken() = deviceTokens.clear()
+
+    fun clearDeviceSession() {
+        deviceTokens.clear()
+        clearCookies()
+    }
+
+    /**
+     * Exchange the encrypted device token for a fresh DSH browser session.
+     * Used when the 30-day cookie expired or the app was reinstalled with a
+     * restored token. A 401 means the device was revoked.
+     */
+    /**
+     * Check a device token with the bridge. `null` means the bridge could not
+     * be reached, not that the token is revoked.
+     */
+    suspend fun validateDeviceToken(baseUrl: String): Boolean? = withContext(Dispatchers.IO) {
+        try {
+            val base = DshUrl.normalize(baseUrl)
+            val saved = deviceTokens.load(base) ?: return@withContext null
+            val request = Request.Builder()
+                .url("$base/mobile/device/me")
+                .header("Authorization", "Bearer ${saved.token}")
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                when {
+                    response.isSuccessful -> true
+                    response.code == 401 -> false
+                    else -> null
+                }
+            }
+        } catch (error: Exception) {
+            null
+        }
+    }
+
+    suspend fun refreshSession(baseUrl: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val base = DshUrl.normalize(baseUrl)
+            val saved = deviceTokens.load(base) ?: return@withContext false
+            val body = buildJsonObject { put("base", base) }
+            val jsonResponse = postJson(
+                "$base/mobile/token/exchange",
+                body,
+                bearer = saved.token,
+            )
+            val tokenUrl = jsonResponse["url"]?.jsonPrimitive?.contentOrNull
+                ?: return@withContext false
+            CookieManager.getInstance().setCookie(
+                "$base/",
+                "dsh_mobile_device=${saved.token}; Path=/; SameSite=Lax",
+            )
+            client.newCall(Request.Builder().url(tokenUrl).get().build()).execute().use { response ->
+                if (response.code !in 200..399) {
+                    if (response.code == 401) deviceTokens.clear()
+                    return@withContext false
+                }
+                response.headers.values("Set-Cookie").forEach { cookie ->
+                    runCatching { CookieManager.getInstance().setCookie("$base/", cookie) }
+                }
+                CookieManager.getInstance().flush()
+            }
+            true
+        } catch (error: Exception) {
+            false
+        }
+    }
+
+    suspend fun listDevices(baseUrl: String): Result<List<DeviceInfo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = DshUrl.normalize(baseUrl)
+            val request = Request.Builder().url("$base/mobile/devices").get().build()
+            client.newCall(request).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw IOException("HTTP ${response.code}: ${text.take(300)}")
+                val root = json.parseToJsonElement(text).jsonObject
+                val array = root["devices"] as? JsonArray ?: JsonArray(emptyList())
+                array.mapNotNull { element ->
+                    val item = element as? JsonObject ?: return@mapNotNull null
+                    DeviceInfo(
+                        id = item["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null,
+                        name = item["name"]?.jsonPrimitive?.contentOrNull ?: "Android 设备",
+                        platform = item["platform"]?.jsonPrimitive?.contentOrNull ?: "android",
+                        appVersion = item["appVersion"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        createdAt = item["createdAt"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        lastSeenAt = item["lastSeenAt"]?.jsonPrimitive?.contentOrNull,
+                        expiresAt = item["expiresAt"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        revoked = item["revoked"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    )
+                }
+            }
+        }
+    }
+
+    suspend fun revokeDevice(baseUrl: String, deviceId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = DshUrl.normalize(baseUrl)
+                val body = buildJsonObject { put("id", deviceId) }
+                postJson("$base/mobile/devices/revoke", body)
+                val own = deviceTokens.load(base)
+                if (own?.deviceId == deviceId) {
+                    deviceTokens.clear()
+                    CookieManager.getInstance().removeAllCookies(null)
+                    CookieManager.getInstance().flush()
+                }
+                Unit
+            }
+        }
+
+    suspend fun renameDevice(baseUrl: String, deviceId: String, name: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = DshUrl.normalize(baseUrl)
+                val body = buildJsonObject {
+                    put("id", deviceId)
+                    put("name", name)
+                }
+                postJson("$base/mobile/devices/rename", body)
+                Unit
+            }
+        }
 
     fun clearCookies() {
         val manager = CookieManager.getInstance()
@@ -192,11 +356,12 @@ class DshApi {
         }
     }
 
-    private fun postJson(url: String, body: JsonObject): JsonObject {
-        val request = Request.Builder()
+    private fun postJson(url: String, body: JsonObject, bearer: String? = null): JsonObject {
+        val builder = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody(JSON))
-            .build()
+        if (bearer != null) builder.header("Authorization", "Bearer $bearer")
+        val request = builder.build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) {

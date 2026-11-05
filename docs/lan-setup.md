@@ -77,17 +77,16 @@ http://192.168.1.10:53985/mobile/pair
 电脑和手机都安装 Tailscale，并登录同一个 tailnet。假设电脑的 tailnet 域名是
 `machine.tailnet.ts.net`。
 
-如果 DSH 绑定的是 LAN IP（推荐，这样局域网和 Tailscale 可以同时用）：
+M3 起 Tailscale 应指向 bridge 的设备代理 `53986`，而不是 DSH 的 `53985`：
 
 ```powershell
-tailscale serve --bg http://192.168.1.10:53985
+tailscale serve --bg http://127.0.0.1:53986
 ```
 
-如果 DSH 绑定的是 `127.0.0.1`：
+DSH 仍监听 `127.0.0.1:53985`；代理会校验收到的 `dsh_mobile_device` Cookie，撤销设备后下一次 HTTP/WebSocket 请求立即被拒绝。  
+`/mobile/pair` 和 `/mobile/hello` 不要求设备 Cookie，因此首次配对仍可用。
 
-```powershell
-tailscale serve --bg http://127.0.0.1:53985
-```
+> 当前代理只绑定回环地址，所以只保护 Tailscale 入口；如果同时开放局域网直连 `53985`，局域网路径不会经过设备门禁。生产环境建议只保留 Tailscale 入口，或后续把 `deviceProxyHost` 也绑定到 LAN IP。
 
 Tailscale 会给出 HTTPS 地址，例如：
 
@@ -117,6 +116,10 @@ https://machine.tailnet.ts.net
             url: 'https://dsh.example.com'
             kind: frp
         pairingTtlSeconds: 120
+        # M3 设备令牌
+        deviceProxyPort: 53986
+        deviceTtlDays: 30
+        # deviceProxy: false  # 仅调试：关闭门禁，设备撤销将不即时生效
 ```
 
 `endpoints` 是给配对页/二维码用的**允许列表**。App 在配对时会把这个 base 发给 bridge；bridge 只接受列表里的地址，避免被用来给任意 Host 签发登录 URL。

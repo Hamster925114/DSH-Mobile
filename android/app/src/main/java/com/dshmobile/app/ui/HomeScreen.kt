@@ -118,13 +118,14 @@ fun HomeScreen(
     val darkTheme = isSystemInDarkTheme()
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showDevices by rememberSaveable { mutableStateOf(false) }
     var terminalMode by rememberSaveable { mutableStateOf(false) }
     var terminalCtrl by rememberSaveable { mutableStateOf(false) }
     var terminalAlt by rememberSaveable { mutableStateOf(false) }
     var networkAvailable by remember { mutableStateOf(true) }
     var dshReachable by remember { mutableStateOf(true) }
     var wasOffline by remember { mutableStateOf(false) }
-    val healthApi = remember { DshApi() }
+    val healthApi = remember { DshApi(context.applicationContext) }
     var loading by remember { mutableStateOf(true) }
     var canGoBack by remember { mutableStateOf(false) }
     var pageError by remember { mutableStateOf<String?>(null) }
@@ -611,6 +612,10 @@ fun HomeScreen(
                 showSettings = false
                 onManageConnections()
             },
+            onManageDevices = {
+                showSettings = false
+                showDevices = true
+            },
             onToggleNotifications = { enabled ->
                 if (enabled &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -632,6 +637,18 @@ fun HomeScreen(
                 onUnpair()
             },
             onDismiss = { showSettings = false },
+        )
+    }
+
+    if (showDevices) {
+        DevicesDialog(
+            baseUrl = baseUrl,
+            onDismiss = { showDevices = false },
+            onCurrentDeviceRevoked = {
+                context.stopService(Intent(context, DshEventService::class.java))
+                showDevices = false
+                onUnpair()
+            },
         )
     }
 }

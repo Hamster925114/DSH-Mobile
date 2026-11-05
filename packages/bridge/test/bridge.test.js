@@ -17,6 +17,8 @@ async function createBridge(config = {}) {
 
   /** @type {Map<string, { kind: string, path: string, handler: Function }>} */
   const routes = new Map()
+  /** @type {Array<() => void>} */
+  const disposers = []
   const ctx = {
     webServer: {
       protocol: 'http:',
@@ -33,17 +35,22 @@ async function createBridge(config = {}) {
     },
     effect: (fn) => {
       const dispose = fn()
+      disposers.push(dispose)
       return () => dispose?.()
     },
     logger: { warn: () => {} },
   }
 
-  await apply(ctx, config)
+  await apply(ctx, { deviceProxy: false, ...config })
 
   return {
     home,
     routes,
     async cleanup() {
+      for (const dispose of disposers.reverse()) {
+        try { dispose?.() } catch {}
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
       await rm(home, { recursive: true, force: true })
       if (previousHome === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previousHome
@@ -126,10 +133,16 @@ test('POST /mobile/pair exchanges a valid one-time code', async () => {
     )
 
     assert.equal(response.status, 200)
-    assert.deepEqual(JSON.parse(response.body), {
-      url: 'https://example.test/?token=test-token',
-      base: 'https://example.test',
-    })
+    const payload = JSON.parse(response.body)
+    assert.equal(payload.url, 'https://example.test/?token=test-token')
+    assert.equal(payload.base, 'https://example.test')
+    assert.match(payload.deviceId, /^[0-9a-f]{12}$/)
+    assert.match(payload.deviceToken, /^dshm_[0-9a-f]{12}_[A-Za-z0-9_-]+$/)
+    const devicesFile = JSON.parse(await readFile(join(bridge.home, 'mobile', 'devices.json'), 'utf8'))
+    assert.equal(devicesFile.devices.length, 1)
+    assert.equal(devicesFile.devices[0].tokenHash.length, 64)
+    assert.equal(devicesFile.devices[0].token, undefined)
+    assert.equal(JSON.stringify(devicesFile).includes(payload.deviceToken), false)
   } finally {
     await bridge.cleanup()
   }
@@ -356,10 +369,10 @@ test('POST /mobile/pair can select a configured endpoint', async () => {
       response,
     )
     assert.equal(response.status, 200)
-    assert.deepEqual(JSON.parse(response.body), {
-      url: 'https://phone.example.ts.net/?token=test-token',
-      base: 'https://phone.example.ts.net',
-    })
+    const payload = JSON.parse(response.body)
+    assert.equal(payload.url, 'https://phone.example.ts.net/?token=test-token')
+    assert.equal(payload.base, 'https://phone.example.ts.net')
+    assert.match(payload.deviceToken, /^dshm_/)
   } finally {
     await bridge.cleanup()
   }
@@ -409,6 +422,80 @@ test('POST /mobile/pair rate-limits repeated attempts', async () => {
       limited,
     )
     assert.equal(limited.status, 429)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('device token can refresh a browser session and is revoked immediately', async () => {
+  const bridge = await createBridge({ publicUrl: 'https://example.test' })
+  try {
+    const pairing = JSON.parse(await readFile(join(bridge.home, 'mobile', 'pairing.json'), 'utf8'))
+    const pairRoute = bridge.routes.get('/mobile/pair')
+    const paired = makeResponse()
+    await pairRoute.handler(
+      makeRequest({
+        method: 'POST',
+        body: JSON.stringify({ code: pairing.code, deviceName: 'Pixel 9', appVersion: '0.1.0' }),
+      }),
+      paired,
+    )
+    assert.equal(paired.status, 200)
+    const issued = JSON.parse(paired.body)
+
+    const exchangeRoute = bridge.routes.get('/mobile/token/exchange')
+    const refreshed = makeResponse()
+    await exchangeRoute.handler(
+      makeRequest({
+        method: 'POST',
+        headers: { authorization: `Bearer ${issued.deviceToken}` },
+        body: JSON.stringify({ base: 'https://example.test' }),
+      }),
+      refreshed,
+    )
+    assert.equal(refreshed.status, 200)
+    assert.equal(JSON.parse(refreshed.body).url, 'https://example.test/?token=test-token')
+
+    const listRoute = bridge.routes.get('/mobile/devices')
+    const list = makeResponse()
+    await listRoute.handler(makeRequest(), list)
+    assert.equal(list.status, 200)
+    const listed = JSON.parse(list.body)
+    assert.equal(listed.devices.length, 1)
+    assert.equal(listed.devices[0].name, 'Pixel 9')
+    assert.equal(listed.proxyEnabled, false)
+
+    const revokeRoute = bridge.routes.get('/mobile/devices/revoke')
+    const revoked = makeResponse()
+    await revokeRoute.handler(
+      makeRequest({ method: 'POST', body: JSON.stringify({ id: issued.deviceId }) }),
+      revoked,
+    )
+    assert.equal(revoked.status, 200)
+
+    const rejected = makeResponse()
+    await exchangeRoute.handler(
+      makeRequest({
+        method: 'POST',
+        headers: { authorization: `Bearer ${issued.deviceToken}` },
+        body: JSON.stringify({ base: 'https://example.test' }),
+      }),
+      rejected,
+    )
+    assert.equal(rejected.status, 401)
+    assert.equal(JSON.parse(rejected.body).error, 'device-invalid')
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
+test('device list rejects a remote caller without a DSH owner cookie', async () => {
+  const bridge = await createBridge({ publicUrl: 'https://example.test' })
+  try {
+    const route = bridge.routes.get('/mobile/devices')
+    const response = makeResponse()
+    await route.handler(makeRequest({ remoteAddress: '203.0.113.7' }), response)
+    assert.equal(response.status, 403)
   } finally {
     await bridge.cleanup()
   }

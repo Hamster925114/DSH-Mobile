@@ -36,6 +36,7 @@ fun SettingsSheet(
     notificationsEnabled: Boolean,
     onToggleNotifications: (Boolean) -> Unit,
     onManageConnections: () -> Unit,
+    onManageDevices: () -> Unit,
     onReload: () -> Unit,
     onRefresh: () -> Unit,
     onUnpair: () -> Unit,
@@ -115,6 +116,13 @@ fun SettingsSheet(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                OutlinedButton(
+                    onClick = onManageDevices,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("设备管理（查看 / 撤销设备）")
+                }
 
                 HorizontalDivider()
 
