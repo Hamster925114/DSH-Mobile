@@ -489,6 +489,21 @@ test('device token can refresh a browser session and is revoked immediately', as
   }
 })
 
+test('desktop device page is available on loopback', async () => {
+  const bridge = await createBridge({ publicUrl: 'https://example.test' })
+  try {
+    const route = bridge.routes.get('/mobile/devices/ui')
+    assert.ok(route, 'device page route registered')
+    const response = makeResponse()
+    await route.handler(makeRequest(), response)
+    assert.equal(response.status, 200)
+    assert.match(response.body, /DSH Mobile 设备管理/)
+    assert.match(response.body, /返回配对页/)
+  } finally {
+    await bridge.cleanup()
+  }
+})
+
 test('device list rejects a remote caller without a DSH owner cookie', async () => {
   const bridge = await createBridge({ publicUrl: 'https://example.test' })
   try {

@@ -556,6 +556,7 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
 <pre>${escapeHtml(code)}</pre>
 <p>有效期至：<code>${escapeHtml(new Date(expiresAt).toISOString())}</code></p>
 <p class="muted">此页面仅本机回环地址可访问。配对码一次性使用；重启 DSH 后会重新生成。</p>
+<p class="muted"><a href="/mobile/devices/ui">设备管理 / 撤销丢失的手机</a></p>
 </body>
 </html>`
       sendHtml(res, 200, html)
@@ -718,6 +719,78 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
     } catch (error) {
       sendJson(res, 500, { error: 'device-store-failed', message: String(error) })
     }
+  }
+
+  /**
+   * Desktop-friendly device management page. This is the recovery path when
+   * the phone itself is lost: it uses the loopback pairing-page fence and
+   * never needs a device token.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleDevicesPage(req, res) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { allow: 'GET' })
+      res.end()
+      return
+    }
+    if (!isAdminRequest(req)) {
+      sendHtml(res, 403, '<h1>403</h1><p>设备管理页面只允许本机或已登录的 DSH 浏览器访问。</p>')
+      return
+    }
+    let list
+    try {
+      list = await devices.list()
+    } catch (error) {
+      sendHtml(res, 500, `<h1>设备列表读取失败</h1><pre>${escapeHtml(String(error))}</pre>`)
+      return
+    }
+    const rows = list
+      .map((device) => {
+        const revoked = device.revoked
+        return `<tr>
+<td>${escapeHtml(device.name)}</td>
+<td>${escapeHtml(device.platform)}${device.appVersion ? ` · ${escapeHtml(device.appVersion)}` : ''}</td>
+<td>${escapeHtml(device.createdAt)}</td>
+<td>${escapeHtml(device.lastSeenAt ?? '—')}</td>
+<td>${revoked ? '已撤销' : '<button data-revoke="' + escapeHtml(device.id) + '">撤销</button>'}</td>
+</tr>`
+      })
+      .join('')
+    const html = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSH Mobile 设备管理</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:72rem;margin:2rem auto;padding:0 1rem;color:#1f2328}
+table{width:100%;border-collapse:collapse;margin:1rem 0}
+th,td{border-bottom:1px solid #d0d7de;text-align:left;padding:.55rem;vertical-align:top;font-size:.9rem}
+th{color:#57606a;font-weight:600}button{padding:.3rem .65rem}
+.muted{color:#57606a;font-size:.9rem}code{background:#f6f8fa;padding:.1rem .3rem;border-radius:.3rem}
+</style></head><body>
+<h1>DSH Mobile 设备管理</h1>
+<p class="muted">此页面仅桌面本机可访问。撤销后该设备下一次请求立即失效；设备令牌明文只保存在手机 Keystore 中。</p>
+<p>代理：${deviceProxy === undefined ? '未启动（撤销不会即时生效）' : `127.0.0.1:${escapeHtml(String(deviceProxy.port))}`}</p>
+<table><thead><tr><th>设备</th><th>平台</th><th>创建</th><th>最近使用</th><th>操作</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="5">还没有已登记设备</td></tr>'}</tbody></table>
+<p><a href="/mobile/pair">返回配对页</a></p>
+<script>
+document.querySelectorAll('[data-revoke]').forEach((button) => {
+  button.addEventListener('click', async () => {
+    if (!confirm('撤销这台设备？')) return
+    button.disabled = true
+    const response = await fetch('/mobile/devices/revoke', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({id: button.dataset.revoke})
+    })
+    if (response.ok) location.reload()
+    else { alert('撤销失败：HTTP ' + response.status); button.disabled = false }
+  })
+})
+</script>
+</body></html>`
+    sendHtml(res, 200, html)
   }
 
   /**
@@ -926,6 +999,15 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
   ctx.effect(
     () => webServer.register({ kind: 'exact', path: '/mobile/devices', handler: handleDevices }),
     'dsh-mobile-bridge: /mobile/devices',
+  )
+  ctx.effect(
+    () =>
+      webServer.register({
+        kind: 'exact',
+        path: '/mobile/devices/ui',
+        handler: handleDevicesPage,
+      }),
+    'dsh-mobile-bridge: /mobile/devices/ui',
   )
   ctx.effect(
     () =>
