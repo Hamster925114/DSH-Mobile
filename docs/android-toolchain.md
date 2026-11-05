@@ -1,6 +1,6 @@
 # Android 工具链（Windows）
 
-当前开发机尚未安装 JDK / Android SDK。M1 开始前需要补齐；以下是可复现的最小安装步骤。
+当前开发机已安装 Android Studio、Android SDK 35，并在 `D:\apps\jdk-17\jdk-17.0.20.1+1` 放了 JDK 17（Android Studio 自带的 JDK 25 与 Gradle 8.11.1 不兼容）。以下是可复现的最小安装步骤。
 
 ---
 
@@ -96,4 +96,4 @@ cd android
 .\gradlew.bat :app:testDebugUnitTest
 ```
 
-> 本机没有 JDK/SDK 时不要执行上面的命令；直接用 Android Studio 的 bundled JDK 和 SDK Manager。首次 Sync 会下载 Gradle 8.11.1 与依赖。
+> 必须在 Android Studio 的 **Gradle JDK** 里选 JDK 17/21，不能选 bundled JDK 25：Gradle 8.11.1 的 Kotlin DSL 会报 `IllegalArgumentException: 25.0.4`。首次 Sync 会下载 Gradle 8.11.1 与依赖；`settings.gradle.kts` 已优先使用阿里云 Maven 镜像，GitHub 源码包超时通常不影响命令行构建。
