@@ -192,6 +192,27 @@ window.__ModuleLoader__.load({
             openSession = () => false
           }
         })
+
+        // Files/Terminal use DSH's right-sidebar service directly. DOM clicking
+        // is brittle because the collapsed panel is display:none on phones.
+        let openPanel = () => false
+        window.__DSH_MOBILE_OPEN_PANEL__ = (kind) => openPanel(kind)
+        ctx.inject(['sidebarRight'], (scope) => {
+          openPanel = (kind) => {
+            try {
+              if (!scope.sidebarRight || typeof scope.sidebarRight.openTab !== 'function') {
+                return false
+              }
+              scope.sidebarRight.openTab(kind, { replaceTab: true })
+              return true
+            } catch (error) {
+              return false
+            }
+          }
+          return () => {
+            openPanel = () => false
+          }
+        })
         const query = window.matchMedia(
           '(max-width: 820px), (max-height: 500px) and (pointer: coarse)'
         )
@@ -293,6 +314,7 @@ window.__ModuleLoader__.load({
             try { backdrop.remove() } catch {}
             try { closeDrawer() } catch {}
             try { delete window.__DSH_MOBILE_OPEN_SESSION__ } catch {}
+            try { delete window.__DSH_MOBILE_OPEN_PANEL__ } catch {}
             try { style.remove() } catch {}
             try { delete document.documentElement.dataset.dshMobileUi } catch {}
           })

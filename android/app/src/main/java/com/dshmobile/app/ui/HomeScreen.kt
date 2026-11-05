@@ -816,6 +816,12 @@ private fun clickMobileTarget(view: WebView?, target: String) {
             }
             return false;
           }
+          // Prefer the client-ui bridge: it calls DSH's sidebarRight service
+          // directly, so the collapsed/hidden DOM cannot swallow the click.
+          if (wanted === 'files' || wanted === 'terminal') {
+            var direct = window.__DSH_MOBILE_OPEN_PANEL__;
+            if (typeof direct === 'function' && direct(wanted)) return;
+          }
           if (wanted === 'chat') {
             function clickChatTab() {
               var buttons = document.querySelectorAll('button');
@@ -847,25 +853,48 @@ private fun clickMobileTarget(view: WebView?, target: String) {
           }
           function clickTarget() {
             if (wanted === 'files') {
+              var files = document.querySelector(
+                '[data-sidebar-right-guide-entry="files"] button'
+              ) || document.querySelector('[aria-label^="Workspace files"]');
+              if (files) {
+                files.click();
+                return true;
+              }
               return clickText('Workspace files');
             }
-            var terminal = document.querySelector('[aria-label^="New terminal"]');
+            var terminal = document.querySelector(
+              '[data-sidebar-right-guide-entry="terminal"] button'
+            ) || document.querySelector('[aria-label^="New terminal"]');
             if (terminal) {
               terminal.click();
               return true;
             }
             return false;
           }
-          if (clickTarget()) return;
+          function ensureExpanded() {
+            if (!document.querySelector('.mP3x-q_frame[data-rightbar-collapsed]')) return;
+            var expand = document.querySelector('[aria-label="Open right sidebar"]');
+            if (expand) expand.click();
+          }
+          if (clickTarget()) {
+            setTimeout(ensureExpanded, 120);
+            return;
+          }
           var newTab = document.querySelector('[aria-label="New tab"]');
           if (newTab) {
             newTab.click();
-            setTimeout(function() { clickTarget(); }, 450);
-            return;
           }
           var open = document.querySelector('[aria-label="Open right sidebar"]');
           if (open) open.click();
-          setTimeout(function() { clickTarget(); }, 600);
+          var attempts = 0;
+          function retryTarget() {
+            if (clickTarget() || ++attempts >= 4) {
+              ensureExpanded();
+              return;
+            }
+            setTimeout(retryTarget, 400);
+          }
+          setTimeout(retryTarget, 350);
         })();
     """.trimIndent()
     view?.evaluateJavascript(script, null)

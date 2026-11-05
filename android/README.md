@@ -138,7 +138,7 @@ Cookie 同时供 WebView 和 OkHttp 使用。成功后 base URL 保存到对应�
 | M2 客户端皮肤 | `@dsh-mobile/client-ui`：全宽会话列、中栏固定到内容轨道（修复 0px 命中区）、折叠右栏隐藏、全屏 Sheet、移动留白、触控尺寸；抽屉展开 DSH 完整侧栏（图标带文字），右缘 `×` 关闭 |
 | M2 横屏 | 紧凑图标底栏、矮终端按键栏、旋转不重建 WebView |
 | M2 深链 | 通知携带 `session_id` / `dshmobile://session/<id>`；`singleTop` + `onNewIntent`；`client-ui` 暴露 `uiWorkspace.openSession` 桥 |
-| M2 文件 | 文件选择多选 + 拍照；选中文件先复制到 App 缓存并由 `FileProvider` 提供稳定 URI，避免 content URI 授权过期导致上传失败；下载完成通知含“打开/分享” |
+| M2 文件/终端 | 底栏通过 `@dsh-mobile/client-ui` 的 `sidebarRight.openTab()` 桥直接打开文件/终端面板，避免折叠右栏的隐藏 DOM 吞点击；文件选择支持多选 + 拍照，选中文件先缓存到 `shared/` 再由 `FileProvider` 提供稳定 URI；下载完成通知含“打开/分享” |
 | M2 剪贴板 | 底栏“粘贴”把剪贴板图片转 JPEG/Base64，合成 `ClipboardEvent` 填入 DSH 输入框 |
 | M2 主题 | 系统亮/暗同步状态栏/导航栏图标、WebView 背景色；DSH 主题跟随系统 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误/完成本地通知 |
