@@ -569,7 +569,7 @@ Cookie: ...
 - [x] `@dsh-mobile/client-ui` 完整布局 v1：左边缘抽屉、文件/终端全屏 Sheet、安全区细节；抽屉展开 DSH 完整侧栏并显示图标文字，右缘 `×` 关闭。
 - [x] 终端按键栏（Esc/Tab/Enter/Ctrl/Alt/Ctrl+C/方向键，已接入原生底栏）。
 - [x] 深链：通知点开直达会话（`singleTop` + `session_id` / `dshmobile://session/<id>` + `uiWorkspace.openSession` 桥）。
-- [x] 文件分享/保存、拍照上传、剪贴板图片（下载完成通知含“打开/分享”；`blob:` 导出通过分块桥写入公共下载目录）。
+- [x] 文件分享/保存、拍照上传、剪贴板图片（下载完成通知含“打开/分享”；`blob:` 导出通过分块桥写入公共下载目录；文件预览头部有“下载”按钮）。
 - [x] 文件/终端面板：`sidebarRight.openTab()` 桥 + `data-sidebar-right-open` 可见性判断，修复全屏面板被折叠右栏样式隐藏。
 - [x] 断线重连 UI、离线提示、请求超时（系统网络回调 + `/mobile/hello` 5 秒健康探测，实测飞行模式显示、恢复后消失）。
 - [x] 横屏适配：紧凑图标底栏、终端按键栏变矮、Activity 旋转不重建 WebView。

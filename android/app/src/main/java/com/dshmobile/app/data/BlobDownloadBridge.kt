@@ -74,6 +74,11 @@ class BlobDownloadBridge(private val context: Context) {
         entry.file.delete()
     }
 
+    @JavascriptInterface
+    fun notify(message: String) {
+        toast(message.take(300))
+    }
+
     private fun save(entry: Pending): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver

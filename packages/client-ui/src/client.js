@@ -20,6 +20,15 @@ window.__ModuleLoader__.load({
       html[data-dsh-mobile-ui="1"] [role="button"] {
         touch-action: manipulation;
       }
+      /* The DSH preview toolbar is 28px square; keep the injected download
+         label readable instead of clipping it to two characters. */
+      html[data-dsh-mobile-ui="1"] [data-dsh-mobile-download] {
+        width: auto !important;
+        min-width: 48px;
+        padding: 0 8px !important;
+        white-space: nowrap;
+        font-size: 12px;
+      }
 
       /* Use the phone width for the conversation column instead of the
          desktop 680–920px clamp. */
@@ -254,11 +263,9 @@ window.__ModuleLoader__.load({
           return btoa(binary)
         }
 
-        async function saveBlob(url, name) {
+        async function saveBlobFile(blob, name) {
           const bridge = window.AndroidDownloader
           if (!bridge || typeof bridge.begin !== 'function') return false
-          const response = await fetch(url)
-          const blob = await response.blob()
           const id = bridge.begin(name || 'download', blob.type || 'application/octet-stream')
           if (!id) return false
           try {
@@ -279,11 +286,93 @@ window.__ModuleLoader__.load({
           }
         }
 
+        async function saveBlob(url, name) {
+          const response = await fetch(url)
+          return saveBlobFile(await response.blob(), name)
+        }
+
         window.__DSH_MOBILE_SAVE_BLOB__ = (url, name) => {
           if (!window.AndroidDownloader) return false
           void saveBlob(url, name)
           return true
         }
+
+        function resourceTarget(value) {
+          const prefix = 'dsh-resource://file/'
+          const raw = typeof value === 'string' ? value : ''
+          if (!raw.startsWith(prefix)) return null
+          const parts = raw.slice(prefix.length).split('/')
+          const kind = parts.shift()
+          if (kind === 'session') {
+            const sessionId = parts.shift()
+            const path = decodeURIComponent(parts.join('/'))
+            return sessionId && path ? { sessionId, path } : null
+          }
+          return null
+        }
+
+        async function downloadPreview(preview) {
+          const target = resourceTarget(preview?.dataset?.textpreviewUrl)
+          if (!target) throw new Error('找不到文件路径')
+          const body = {
+            type: 'client-request',
+            rpcId: (globalThis.crypto?.randomUUID?.() ?? String(Date.now())),
+            method: 'workspaceFiles/readBytes',
+            payload: {
+              args: {
+                workspaceFileScopeId: target.sessionId,
+                path: target.path,
+                options: {},
+              },
+            },
+          }
+          const response = await fetch('/api/workspaceFiles/readBytes', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          const type = response.headers.get('content-type') || ''
+          if (!type.includes('multipart/form-data')) {
+            throw new Error((await response.text()).slice(0, 160))
+          }
+          const form = await response.formData()
+          const file = form.get('bytes-0')
+          if (!(file instanceof Blob)) throw new Error('文件内容为空')
+          const name = target.path.split(/[\\/]/).pop() || 'download'
+          const saved = await saveBlobFile(file, name)
+          if (!saved) throw new Error('保存失败')
+        }
+
+        function ensureDownloadButtons() {
+          if (!window.AndroidDownloader) return
+          document.querySelectorAll('[data-textpreview-url]').forEach((preview) => {
+            const header = preview.querySelector('[data-textpreview-path]')?.parentElement
+            if (!header || header.querySelector('[data-dsh-mobile-download]')) return
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.className = '_3R73eq_tool'
+            button.dataset.dshMobileDownload = '1'
+            button.textContent = '下载'
+            button.title = '下载文件'
+            button.setAttribute('aria-label', '下载文件')
+            button.addEventListener('click', async () => {
+              button.disabled = true
+              try {
+                await downloadPreview(preview)
+              } catch (error) {
+                window.AndroidDownloader?.notify?.(`下载失败：${String(error.message || error)}`)
+              } finally {
+                button.disabled = false
+              }
+            })
+            header.appendChild(button)
+          })
+        }
+
+        const downloadObserver = new MutationObserver(ensureDownloadButtons)
+        if (document.body) downloadObserver.observe(document.body, { childList: true, subtree: true })
+        ensureDownloadButtons()
 
         const onBlobDownloadClick = (event) => {
           if (!window.AndroidDownloader) return
@@ -394,6 +483,10 @@ window.__ModuleLoader__.load({
         if (typeof ctx?.effect === 'function') {
           ctx.effect(() => () => {
             try { query.removeEventListener('change', applyMarker) } catch {}
+            try { downloadObserver.disconnect() } catch {}
+            try {
+              document.querySelectorAll('[data-dsh-mobile-download]').forEach((button) => button.remove())
+            } catch {}
             try { document.removeEventListener('click', onBlobDownloadClick, true) } catch {}
             try { delete window.__DSH_MOBILE_SAVE_BLOB__ } catch {}
             try { handle.removeEventListener('click', onHandleClick) } catch {}
