@@ -137,6 +137,7 @@ function deny(res, reason) {
  *   listenPort: number,
  *   store: import('./devices.js').DeviceStore,
  *   logger?: { warn?: (message: string) => void, info?: (message: string) => void },
+ *   onDenied?: (event: { req: import('node:http').IncomingMessage, reason: string }) => void,
  * }} options
  * @returns {Promise<{ close: () => Promise<void>, port: number }>}
  */
@@ -177,6 +178,7 @@ export async function startDeviceProxy(options) {
       }
       const admitted = await authorize(url, req)
       if (admitted === null) {
+        options.onDenied?.({ req, reason: 'invalid-or-revoked-device-token' })
         deny(res, 'revoked')
         return
       }
@@ -245,6 +247,7 @@ export async function startDeviceProxy(options) {
       }
       const admitted = await authorize(url, req)
       if (admitted === null) {
+        options.onDenied?.({ req, reason: 'invalid-or-revoked-device-token' })
         socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
         socket.destroy()
         return

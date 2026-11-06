@@ -556,7 +556,7 @@ Cookie: ...
 - [x] bridge 插件 v0：写 `pairing.json`、`/mobile/pair`（含二维码）、`/mobile/hello`。
 - [x] 桌面安装/配置文档。
 
-**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断真机 8/8 通过；**27 个 JVM 单元测试 + 24 个 bridge Node 测试通过**（含设备令牌、代理 HTTP/WebSocket 门禁）。前台服务 `$events` 已收到 `ready`；Read Only 会话触发 `waterfall approval/request`，通知栏已收到「需要审批」。文件选择/上传/下载由用户真机确认通过；本轮补齐文件选择缓存暂存（修复 content URI 授权过期导致的上传失败）、拍照、剪贴板图片、下载完成通知、通知深链和亮/暗主题。`@dsh-mobile/client-ui` 修复移动端中栏 0px 命中区、折叠右栏遮挡和全屏 Sheet；语音输入、平板适配按用户要求不做。M1 剩余：一次完整 10 任务流程；LAN/frp 第二条链路已由用户决定舍弃。
+**当前状态（2026-11-05）**：Android 工程已用 JDK 17 构建通过并安装到真机；Tailscale 配对、WebView 会话、Fairy 皮肤、模型菜单、DSH 设置/添加工作区均已实测。连接诊断真机 8/8 通过；**27 个 JVM 单元测试 + 27 个 bridge Node 测试通过**（含设备令牌、代理 HTTP/WebSocket 门禁、审计）。前台服务 `$events` 已收到 `ready`；Read Only 会话触发 `waterfall approval/request`，通知栏已收到「需要审批」。文件选择/上传/下载由用户真机确认通过；本轮补齐文件选择缓存暂存（修复 content URI 授权过期导致的上传失败）、拍照、剪贴板图片、下载完成通知、通知深链和亮/暗主题。`@dsh-mobile/client-ui` 修复移动端中栏 0px 命中区、折叠右栏遮挡和全屏 Sheet；语音输入、平板适配按用户要求不做。M1 剩余：一次完整 10 任务流程；LAN/frp 第二条链路已由用户决定舍弃。
 
 **验收**：在手机上完成 10 个真实任务（新建会话、切工作区、换模型、看文件、开终端、装/禁插件、审批），全程不碰电脑。
 
@@ -585,7 +585,7 @@ Cookie: ...
 
 - [x] bridge 设备令牌：配对签发独立 deviceToken、Android Keystore 加密保存、`/mobile/token/exchange` 静默续期。
 - [x] bridge 设备管理：`/mobile/devices` 列表、命名、撤销；`53986` 设备代理对 HTTP/WebSocket 做即时门禁；App 设置页设备管理。
-- [ ] bridge 审计日志：记录配对/撤销/续期操作（当前 devices.json 保留 revokedAt 审计字段）。
+- [x] bridge 审计日志：`audit.jsonl` 记录配对、登录/续期、撤销、重命名、拒绝访问；App 和桌面设备页可查看。
 - [ ] 连接配置管理增强：三路配置导入/导出、自动诊断向导、切换失败自动回退。
 - [ ] 前台服务稳定性：Doze/断网重连、电量优化、Android 15 时长限制提示。
 - [ ] 证书固定、生物识别锁、截屏保护。

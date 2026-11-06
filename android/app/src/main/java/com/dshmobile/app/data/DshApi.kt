@@ -50,6 +50,15 @@ data class DeviceInfo(
     val revoked: Boolean,
 )
 
+data class AuditEvent(
+    val ts: String,
+    val event: String,
+    val deviceId: String?,
+    val deviceName: String?,
+    val remote: String?,
+    val detail: String?,
+)
+
 sealed interface PairResult {
     data class Success(val outcome: PairOutcome) : PairResult
     data class Failure(val message: String) : PairResult
@@ -258,6 +267,36 @@ class DshApi(private val context: Context) {
             }
         }
     }
+
+    suspend fun listAudit(baseUrl: String, limit: Int = 50): Result<List<AuditEvent>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = DshUrl.normalize(baseUrl)
+                val request = Request.Builder()
+                    .url("$base/mobile/audit?limit=${limit.coerceIn(1, 500)}")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val text = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        throw IOException("HTTP ${response.code}: ${text.take(300)}")
+                    }
+                    val root = json.parseToJsonElement(text).jsonObject
+                    val array = root["events"] as? JsonArray ?: JsonArray(emptyList())
+                    array.mapNotNull { element ->
+                        val item = element as? JsonObject ?: return@mapNotNull null
+                        AuditEvent(
+                            ts = item["ts"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null,
+                            event = item["event"]?.jsonPrimitive?.contentOrNull ?: "unknown",
+                            deviceId = item["deviceId"]?.jsonPrimitive?.contentOrNull,
+                            deviceName = item["deviceName"]?.jsonPrimitive?.contentOrNull,
+                            remote = item["remote"]?.jsonPrimitive?.contentOrNull,
+                            detail = item["detail"]?.jsonPrimitive?.contentOrNull,
+                        )
+                    }
+                }
+            }
+        }
 
     suspend fun revokeDevice(baseUrl: String, deviceId: String): Result<Unit> =
         withContext(Dispatchers.IO) {

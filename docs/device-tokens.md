@@ -73,6 +73,28 @@ Android 端用 Android Keystore 的 AES/GCM 密钥加密令牌，密文放 Share
 - 管理列表：`GET /mobile/devices`；重命名：`POST /mobile/devices/rename`。
 - 设备令牌默认 30 天；`deviceTtlDays` 可调。`/mobile/token/exchange` 会滑动续期。
 
+## 审计日志
+
+文件：`$DSH_HOME/mobile/audit.jsonl`（JSON Lines，权限 0600）。超过 2 MB 时轮转为 `audit.jsonl.1`，只保留一代。
+
+记录事件：
+
+| event | 时机 |
+|---|---|
+| `pair` | 配对成功、签发设备令牌 |
+| `login` | 设备令牌校验 / `token/exchange` 续期（同一设备 5 分钟内只记一次校验） |
+| `revoke` | 撤销设备 |
+| `rename` | 重命名设备 |
+| `denied` | 代理拒绝缺失/已撤销的令牌（同一来源 60 秒节流） |
+
+每行包含 `ts`、`event`、`deviceId`、`deviceName`、`platform`、`actor`、`remote`、`detail`、`expiresAt`，**不包含 deviceToken、Cookie 或 DSH launch token**。
+
+查看：
+
+- App：设置 → 设备管理 → **审计日志**。
+- 桌面：`http://127.0.0.1:53985/mobile/devices/ui`。
+- API：`GET /mobile/audit?limit=50`，要求 loopback 或有效 DSH owner Cookie。
+
 ## 迁移
 
 旧版本只有 30 天 DSH Cookie，没有设备令牌。切换到 `53986` 后旧手机会被 401 拒绝，这是预期的：在电脑打开 `http://127.0.0.1:53985/mobile/pair`，用新 APK 重新配对一次。
@@ -84,4 +106,4 @@ cd packages/bridge
 node --test test/*.test.js
 ```
 
-覆盖配对、令牌续期、撤销、代理 HTTP 门禁、代理 WebSocket 门禁、公共配对路径。
+覆盖配对、令牌续期、撤销、审计写入/读取、代理 HTTP 门禁、代理 WebSocket 门禁、公共配对路径。

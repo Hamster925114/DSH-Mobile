@@ -21,6 +21,7 @@ import { mkdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import QRCode from 'qrcode'
+import { AuditLog } from './audit.js'
 import { DeviceStore } from './devices.js'
 import { startDeviceProxy } from './proxy.js'
 
@@ -205,6 +206,22 @@ function bearerToken(req) {
 }
 
 /**
+ * Best-effort client address for audit rows. Tailscale Serve supplies
+ * X-Forwarded-For; direct loopback calls fall back to the socket address.
+ * @param {import('node:http').IncomingMessage} req
+ * @returns {string | null}
+ */
+function clientAddress(req) {
+  const forwarded = req.headers?.['x-forwarded-for']
+  if (typeof forwarded === 'string' && forwarded.trim() !== '') {
+    return forwarded.split(',')[0].trim()
+  }
+  const real = req.headers?.['x-real-ip']
+  if (typeof real === 'string' && real.trim() !== '') return real.trim()
+  return typeof req.socket?.remoteAddress === 'string' ? req.socket.remoteAddress : null
+}
+
+/**
  * Escape text for the local pairing page.
  * @param {unknown} value
  * @returns {string}
@@ -342,6 +359,7 @@ export async function apply(ctx, config = {}) {
     logger: ctx.logger,
   })
   await devices.load()
+  const audit = new AuditLog({ directory, logger: ctx.logger })
 
   /** @type {{ close: () => Promise<void>, port: number } | undefined} */
   let deviceProxy
@@ -359,6 +377,17 @@ export async function apply(ctx, config = {}) {
         listenPort: proxyPort,
         store: devices,
         logger: ctx.logger,
+        onDenied: ({ req, reason }) => {
+          const remote = clientAddress(req)
+          if (audit.shouldRecordDenied(remote ?? 'unknown')) {
+            void audit.record({
+              event: 'denied',
+              remote,
+              actor: 'system',
+              detail: reason,
+            })
+          }
+        },
       })
       ctx.logger?.info?.(
         `dsh-mobile-bridge: device proxy listening on 127.0.0.1:${String(deviceProxy.port)} -> ${String(webServer.host ?? '127.0.0.1')}:${String(webServer.port)}`,
@@ -667,6 +696,7 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
     // Burn the code only after the device record exists and the launch URL is
     // ready; a failed registration must not consume a valid pairing code.
     consumed = true
+    await recordDeviceEvent('pair', issued.device, req, 'pairing code accepted', issued.device.expiresAt)
     sendJson(res, 200, {
       url,
       base: requestedBase,
@@ -696,6 +726,27 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
   }
 
   /**
+   * Append a device audit row without ever touching the raw token.
+   * @param {string} event
+   * @param {object} device
+   * @param {import('node:http').IncomingMessage} req
+   * @param {string | null} [detail]
+   * @param {string | null} [expiresAt]
+   */
+  async function recordDeviceEvent(event, device, req, detail = null, expiresAt = null) {
+    await audit.record({
+      event,
+      deviceId: device.id,
+      deviceName: device.name,
+      platform: device.platform,
+      actor: 'device',
+      remote: clientAddress(req),
+      detail,
+      expiresAt,
+    })
+  }
+
+  /**
    * List devices for the management screen.
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
@@ -718,6 +769,36 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
       })
     } catch (error) {
       sendJson(res, 500, { error: 'device-store-failed', message: String(error) })
+    }
+  }
+
+  /**
+   * Newest-first audit history for the app and the desktop page.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function handleAudit(req, res) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { allow: 'GET' })
+      res.end()
+      return
+    }
+    if (!isAdminRequest(req)) {
+      sendJson(res, 403, { error: 'forbidden' })
+      return
+    }
+    let limit = 100
+    try {
+      const url = new URL(req.url ?? '/', 'http://dsh-mobile-bridge')
+      const raw = url.searchParams.get('limit')
+      if (raw !== null && /^\d+$/.test(raw)) limit = Number(raw)
+    } catch {
+      // Use the default limit.
+    }
+    try {
+      sendJson(res, 200, { events: await audit.recent(limit) })
+    } catch (error) {
+      sendJson(res, 500, { error: 'audit-read-failed', message: String(error) })
     }
   }
 
@@ -745,6 +826,28 @@ ${loopbackOnly ? '<p class="warn">当前没有手机可达的地址：DSH 绑定
       sendHtml(res, 500, `<h1>设备列表读取失败</h1><pre>${escapeHtml(String(error))}</pre>`)
       return
     }
+    let auditEvents = []
+    try {
+      auditEvents = await audit.recent(50)
+    } catch {
+      auditEvents = []
+    }
+    const eventLabels = {
+      pair: '配对',
+      login: '登录 / 续期',
+      revoke: '撤销',
+      rename: '重命名',
+      denied: '拒绝访问',
+    }
+    const auditRows = auditEvents
+      .map((event) => `<tr>
+<td>${escapeHtml(event.ts)}</td>
+<td>${escapeHtml(eventLabels[event.event] ?? event.event)}</td>
+<td>${escapeHtml(event.deviceName ?? event.deviceId ?? '—')}</td>
+<td>${escapeHtml(event.remote ?? '—')}</td>
+<td>${escapeHtml(event.detail ?? '—')}</td>
+</tr>`)
+      .join('')
     const rows = list
       .map((device) => {
         const revoked = device.revoked
@@ -773,6 +876,10 @@ th{color:#57606a;font-weight:600}button{padding:.3rem .65rem}
 <p>代理：${deviceProxy === undefined ? '未启动（撤销不会即时生效）' : `127.0.0.1:${escapeHtml(String(deviceProxy.port))}`}</p>
 <table><thead><tr><th>设备</th><th>平台</th><th>创建</th><th>最近使用</th><th>操作</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="5">还没有已登记设备</td></tr>'}</tbody></table>
+<h2>审计日志</h2>
+<p class="muted">最近 50 条：配对、登录/续期、撤销、重命名、拒绝访问。日志不含令牌或 Cookie。</p>
+<table><thead><tr><th>时间</th><th>事件</th><th>设备</th><th>来源</th><th>详情</th></tr></thead>
+<tbody>${auditRows || '<tr><td colspan="5">还没有审计记录</td></tr>'}</tbody></table>
 <p><a href="/mobile/pair">返回配对页</a></p>
 <script>
 document.querySelectorAll('[data-revoke]').forEach((button) => {
@@ -821,11 +928,21 @@ document.querySelectorAll('[data-revoke]').forEach((button) => {
       sendJson(res, 400, { error: 'missing-device-id' })
       return
     }
+    const target = (await devices.list()).find((device) => device.id === id)
     const revoked = await devices.revoke(id)
     if (!revoked) {
       sendJson(res, 404, { error: 'unknown-device' })
       return
     }
+    await audit.record({
+      event: 'revoke',
+      deviceId: id,
+      deviceName: target?.name ?? null,
+      platform: target?.platform ?? null,
+      actor: 'admin',
+      remote: clientAddress(req),
+      detail: 'device token revoked',
+    })
     sendJson(res, 200, { ok: true, id })
   }
 
@@ -861,6 +978,15 @@ document.querySelectorAll('[data-revoke]').forEach((button) => {
       sendJson(res, 404, { error: 'unknown-device' })
       return
     }
+    await audit.record({
+      event: 'rename',
+      deviceId: device.id,
+      deviceName: device.name,
+      platform: device.platform,
+      actor: 'admin',
+      remote: clientAddress(req),
+      detail: `renamed to ${device.name}`,
+    })
     sendJson(res, 200, { ok: true, device })
   }
 
@@ -882,6 +1008,9 @@ document.querySelectorAll('[data-revoke]').forEach((button) => {
       return
     }
     await devices.flush().catch(() => {})
+    if (audit.shouldRecordLogin(device.id)) {
+      await recordDeviceEvent('login', device, req, 'device token validated', device.expiresAt)
+    }
     sendJson(res, 200, { ok: true, device })
   }
 
@@ -937,6 +1066,13 @@ document.querySelectorAll('[data-revoke]').forEach((button) => {
       return
     }
     const renewed = await devices.renew(device.id)
+    await recordDeviceEvent(
+      'login',
+      renewed ?? device,
+      req,
+      'token exchange / renew',
+      renewed?.expiresAt ?? device.expiresAt,
+    )
     sendJson(res, 200, {
       url,
       base: selected,
@@ -1008,6 +1144,10 @@ document.querySelectorAll('[data-revoke]').forEach((button) => {
         handler: handleDevicesPage,
       }),
     'dsh-mobile-bridge: /mobile/devices/ui',
+  )
+  ctx.effect(
+    () => webServer.register({ kind: 'exact', path: '/mobile/audit', handler: handleAudit }),
+    'dsh-mobile-bridge: /mobile/audit',
   )
   ctx.effect(
     () =>

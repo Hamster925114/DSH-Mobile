@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.dshmobile.app.data.AuditEvent
 import com.dshmobile.app.data.DeviceInfo
 import com.dshmobile.app.data.DshApi
 import kotlinx.coroutines.launch
@@ -46,6 +47,7 @@ fun DevicesDialog(
     var error by remember { mutableStateOf<String?>(null) }
     var busyId by remember { mutableStateOf<String?>(null) }
     var confirmRevoke by remember { mutableStateOf<DeviceInfo?>(null) }
+    var showAudit by remember { mutableStateOf(false) }
     val ownId = remember { api.currentDeviceId(baseUrl) }
 
     fun reload() {
@@ -86,6 +88,7 @@ fun DevicesDialog(
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.weight(1f),
                     )
+                    TextButton(onClick = { showAudit = true }) { Text("审计日志") }
                     TextButton(onClick = onDismiss) { Text("关闭") }
                 }
                 HorizontalDivider()
@@ -150,6 +153,10 @@ fun DevicesDialog(
                 }
             }
         }
+    }
+
+    if (showAudit) {
+        AuditDialog(baseUrl = baseUrl, onDismiss = { showAudit = false })
     }
 
     val pending = confirmRevoke
@@ -221,5 +228,111 @@ private fun DeviceRow(
                 Text(if (busy) "处理中…" else "撤销")
             }
         }
+    }
+}
+
+@Composable
+private fun AuditDialog(baseUrl: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val api = remember { DshApi(context.applicationContext) }
+    var events by remember { mutableStateOf<List<AuditEvent>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(baseUrl) {
+        api.listAudit(baseUrl)
+            .onSuccess { events = it }
+            .onFailure { error = it.message ?: "审计日志读取失败" }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.78f),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "审计日志",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onDismiss) { Text("关闭") }
+                }
+                HorizontalDivider()
+                when {
+                    error != null -> Text(
+                        text = error ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+
+                    events == null -> Text(
+                        text = "正在读取审计日志…",
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+
+                    events!!.isEmpty() -> Text(
+                        text = "还没有审计记录",
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+
+                    else -> LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(events!!) { event ->
+                            AuditRow(event)
+                        }
+                    }
+                }
+                Text(
+                    text = "记录配对、登录/续期、撤销、重命名和拒绝访问；不包含令牌或 Cookie。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuditRow(event: AuditEvent) {
+    val label = when (event.event) {
+        "pair" -> "配对"
+        "login" -> "登录 / 续期"
+        "revoke" -> "撤销"
+        "rename" -> "重命名"
+        "denied" -> "拒绝访问"
+        else -> event.event
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(
+            text = "$label · ${event.ts.take(19).replace('T', ' ')}",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = listOfNotNull(
+                event.deviceName ?: event.deviceId,
+                event.remote,
+                event.detail,
+            ).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

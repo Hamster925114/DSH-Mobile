@@ -156,9 +156,10 @@ Cookie 同时供 WebView 和 OkHttp 使用；设备令牌额外保存在 Android
 | M2 主题 | 系统亮/暗同步状态栏/导航栏图标、WebView 背景色；DSH 主题跟随系统 |
 | M3 设备令牌 | 配对签发独立 deviceToken（设备端 Android Keystore 加密）；`/mobile/token/exchange` 静默续期；`53986` 设备代理对 HTTP/WebSocket 做门禁 |
 | M3 设备管理 | App 设置 → 设备管理：列表/撤销；桌面 `devices.json` 只存 SHA-256；撤销后下一次请求立即 401 |
+| M3 审计日志 | `audit.jsonl` 记录配对、登录/续期、撤销、重命名、拒绝访问；App 设备管理内和桌面设备页可查看 |
 | 前台服务 | `DshEventService` 连 `wss://.../api/remote.mux`，订阅 `$events`，审批/错误/完成本地通知 |
 | 通知 | Android 13+ 运行时权限；Android 14 `dataSync` 前台服务类型；下载完成独立渠道 |
-| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试；bridge 24 个 Node 测试（含设备令牌与代理门禁） |
+| 测试 | `DshUrl`、`PairingPayload`、`ConnectionProfile`、`ConnectionDiagnostics`、`SessionLink` 共 27 个 JVM 单元测试；bridge 27 个 Node 测试（含设备令牌、代理门禁、审计） |
 
 ### 3.1 明确不做（M1）
 

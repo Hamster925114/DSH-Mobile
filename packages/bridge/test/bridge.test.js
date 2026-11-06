@@ -515,3 +515,47 @@ test('device list rejects a remote caller without a DSH owner cookie', async () 
     await bridge.cleanup()
   }
 })
+
+test('pair, login, and revoke are written to the audit log', async () => {
+  const bridge = await createBridge({ publicUrl: 'https://example.test' })
+  try {
+    const pairing = JSON.parse(await readFile(join(bridge.home, 'mobile', 'pairing.json'), 'utf8'))
+    const pairRoute = bridge.routes.get('/mobile/pair')
+    const paired = makeResponse()
+    await pairRoute.handler(
+      makeRequest({ method: 'POST', body: JSON.stringify({ code: pairing.code, deviceName: 'Audit Phone' }) }),
+      paired,
+    )
+    const issued = JSON.parse(paired.body)
+
+    const exchange = bridge.routes.get('/mobile/token/exchange')
+    const refreshed = makeResponse()
+    await exchange.handler(
+      makeRequest({
+        method: 'POST',
+        headers: { authorization: `Bearer ${issued.deviceToken}` },
+        body: JSON.stringify({ base: 'https://example.test' }),
+      }),
+      refreshed,
+    )
+    assert.equal(refreshed.status, 200)
+
+    const revoke = bridge.routes.get('/mobile/devices/revoke')
+    const revoked = makeResponse()
+    await revoke.handler(
+      makeRequest({ method: 'POST', body: JSON.stringify({ id: issued.deviceId }) }),
+      revoked,
+    )
+    assert.equal(revoked.status, 200)
+
+    const auditRoute = bridge.routes.get('/mobile/audit')
+    const audit = makeResponse()
+    await auditRoute.handler(makeRequest(), audit)
+    assert.equal(audit.status, 200)
+    const events = JSON.parse(audit.body).events
+    assert.deepEqual(events.map((event) => event.event).slice(0, 3), ['revoke', 'login', 'pair'])
+    assert.equal(JSON.stringify(events).includes(issued.deviceToken), false)
+  } finally {
+    await bridge.cleanup()
+  }
+})
