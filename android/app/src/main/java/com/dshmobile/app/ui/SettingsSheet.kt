@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -21,11 +22,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.dshmobile.app.BuildConfig
 
 @Composable
 fun SettingsSheet(
@@ -42,6 +48,7 @@ fun SettingsSheet(
     onUnpair: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var showPrivacy by remember { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -124,6 +131,13 @@ fun SettingsSheet(
                     Text("设备管理（查看 / 撤销设备）")
                 }
 
+                OutlinedButton(
+                    onClick = { showPrivacy = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("隐私说明")
+                }
+
                 HorizontalDivider()
 
                 Row(
@@ -158,11 +172,28 @@ fun SettingsSheet(
                 }
 
                 Text(
-                    text = "DSH Mobile 0.1.0 · M1",
+                    text = "DSH Mobile ${BuildConfig.VERSION_NAME} · M4",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
+    }
+
+    if (showPrivacy) {
+        AlertDialog(
+            onDismissRequest = { showPrivacy = false },
+            title = { Text("隐私说明") },
+            text = {
+                Text(
+                    "DSH Mobile 不包含广告或统计 SDK。连接地址、Cookie、加密设备令牌只保存在本机；" +
+                        "桌面端保存设备令牌的 SHA-256 和审计日志。下载文件写入公共 Download 目录。" +
+                        "清除配对会删除本机 Cookie 和设备令牌。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacy = false }) { Text("关闭") }
+            },
+        )
     }
 }

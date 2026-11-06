@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    name: Bridge tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  android:
+    name: Android build, tests, lint, release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug and run JVM tests
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest --stacktrace
+      - name: Lint
+        run: ./gradlew :app:lintDebug --stacktrace
+      - name: Build unsigned release
+        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-mobile-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-mobile-release
+          path: android/app/build/outputs/apk/release/app-release*.apk
+          if-no-files-found: warn
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            android/app/build/reports/tests
+            android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
+  signed-release:
+    name: Signed release (optional)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    env:
+      DSH_MOBILE_KEYSTORE: ${{ github.workspace }}/release.keystore
+      DSH_MOBILE_KEYSTORE_PASSWORD: ${{ secrets.DSH_MOBILE_KEYSTORE_PASSWORD }}
+      DSH_MOBILE_KEY_ALIAS: ${{ secrets.DSH_MOBILE_KEY_ALIAS }}
+      DSH_MOBILE_KEY_PASSWORD: ${{ secrets.DSH_MOBILE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Decode keystore
+        if: env.DSH_MOBILE_KEYSTORE_PASSWORD != ''
+        run: |
+          echo "${{ secrets.DSH_MOBILE_KEYSTORE_BASE64 }}" | base64 --decode > "$DSH_MOBILE_KEYSTORE"
+      - name: Build signed release
+        if: env.DSH_MOBILE_KEYSTORE_PASSWORD != ''
+        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Upload signed APK
+        if: env.DSH_MOBILE_KEYSTORE_PASSWORD != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-mobile-signed-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

@@ -13,15 +13,31 @@ android {
         applicationId = "com.dshmobile.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        val storePath = System.getenv("DSH_MOBILE_KEYSTORE")
+        if (!storePath.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(storePath)
+                storePassword = System.getenv("DSH_MOBILE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("DSH_MOBILE_KEY_ALIAS")
+                keyPassword = System.getenv("DSH_MOBILE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // M4 keeps minification off until a dedicated R8 validation pass;
+            // enabling it without keep rules breaks Compose/ZXing reflection.
             isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -40,6 +56,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

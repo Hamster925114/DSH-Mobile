@@ -31,7 +31,7 @@ export const name = 'dsh-mobile-bridge'
 /** Services required before the pairing routes can be registered. */
 export const inject = ['webServer', 'connection']
 
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 const DEFAULT_TTL_SECONDS = 120
 const MIN_TTL_SECONDS = 30
 const MAX_BODY_BYTES = 4096

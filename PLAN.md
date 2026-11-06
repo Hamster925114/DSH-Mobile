@@ -597,10 +597,10 @@ Cookie: ...
 
 ### M4 · 发布（第 10–11 周）
 
-- [ ] CI：lint、单测、instrumented test、assembleRelease。
-- [ ] 签名、版本号、更新日志、隐私说明。
-- [ ] 安装包/下载页、桌面配置向导、FAQ。
-- [ ] 崩溃上报（可选，注意隐私）。
+- [x] CI：bridge Node 测试、Android JVM 测试、instrumented smoke 编译、`lintDebug`、debug/unsigned release；真机 instrumented smoke 已通过（CI 无模拟器，不执行 connected 测试）。
+- [x] 签名配置（env keystore）、版本号 `0.2.0`、CHANGELOG、隐私说明、release 文档。
+- [x] FAQ、下载/安装页、桌面配对文档；正式下载站/桌面向导 UI 待补。
+- [ ] 崩溃上报（当前决定不做第三方 SDK）。
 - [ ] Beta 用户反馈、性能/电量优化。
 
 **总工期**：2 人约 10–11 周；单人约 14–16 周。

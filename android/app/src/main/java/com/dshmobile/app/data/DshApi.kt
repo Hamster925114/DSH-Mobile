@@ -3,6 +3,7 @@ package com.dshmobile.app.data
 import android.content.Context
 import android.os.Build
 import android.webkit.CookieManager
+import com.dshmobile.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -101,7 +102,7 @@ class DshApi(private val context: Context) {
                 put("base", base)
                 put("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
                 put("platform", "android")
-                put("appVersion", "0.1.0")
+                put("appVersion", BuildConfig.VERSION_NAME)
             }
             val pairJson = postJson("$base/mobile/pair", pairBody)
             val tokenUrl = pairJson["url"]?.jsonPrimitive?.contentOrNull

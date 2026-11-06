@@ -1,9 +1,10 @@
-# DSH Mobile — Android 客户端（M1）
+# DSH Mobile — Android 客户端（0.2.0 / M4）
 
-Kotlin + Jetpack Compose 外壳，WebView 加载桌面 DSH 的 Web GUI，原生负责配对、Cookie、连接状态和前台事件通知。
+Kotlin + Jetpack Compose 外壳，WebView 加载桌面 DSH 的 Web GUI，原生负责配对、Cookie、设备令牌、连接状态、文件下载和前台事件通知。
 
 - 包名：`com.dshmobile.app`
 - 应用名：`DSH Mobile`
+- 版本：`0.2.0` / `versionCode 2`
 - minSdk：26（Android 8.0）
 - targetSdk / compileSdk：35
 - AGP：8.7.3，Gradle：8.11.1，Kotlin：2.1.0
@@ -235,7 +236,7 @@ app/src/main/java/com/dshmobile/app/
 
 ## 6. 已知限制
 
-- **DSH SPA 是桌面布局**：M1 只注入少量 CSS，复杂页面（终端、diff、插件市场）在手机上可能拥挤；M2 的 `client-ui` 移动皮肤解决。
+- **DSH SPA 是桌面布局**：`client-ui` 已覆盖会话/文件/终端/抽屉，复杂 diff、插件市场等页面仍可能偏挤。
 - **明文 HTTP**：`usesCleartextTraffic="true"` 仅为局域网调试；Tailscale/frp 应使用 HTTPS，正式版应移除。
 - **前台服务**：Android 15 对 `dataSync` 有 6 小时/天的限制；App 被强停或系统回收后不会收到事件。这是产品决策，不是 bug。
 - **WebSocket 401**：当前实现会提示并停止重连；重新配对后再开启通知。
@@ -268,3 +269,20 @@ app/src/main/java/com/dshmobile/app/
 | 亮/暗切换后颜色不更新 | 系统是否切换了深色模式；DSH 主题设为“跟随系统”；必要时重新加载 WebView |
 | 通知不出现 | Android 13+ 通知权限；设置里开关；`dsh_events` 渠道 |
 | 扫码没反应 | 相机权限；模拟器无相机时用手动输入 |
+
+---
+
+## 8. M4 发布
+
+- 版本：`0.2.0` / `versionCode 2`。
+- `release` 构建在设置 `DSH_MOBILE_KEYSTORE` 等环境变量时签名；未设置时产出 `app-release-unsigned.apk` 供 CI 验证。
+- CI：`.github/workflows/ci.yml`，包含 bridge 27 个 Node 测试、Android JVM 测试、`lintDebug`、debug/release 构建。
+- 签名命令、CI secrets、发布检查清单：[docs/release.md](../docs/release.md)。
+- 隐私说明：[docs/privacy.md](../docs/privacy.md)。
+- 常见问题：[docs/faq.md](../docs/faq.md)。
+
+```powershell
+$env:JAVA_HOME='D:\apps\jdk-17\jdk-17.0.20.1+1'
+cd android
+.\gradlew.bat :app:lintDebug :app:assembleRelease
+```
