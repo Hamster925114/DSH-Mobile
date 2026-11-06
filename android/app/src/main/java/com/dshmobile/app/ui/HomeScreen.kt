@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.dshmobile.app.data.BlobDownloadBridge
 import com.dshmobile.app.data.DshApi
 import com.dshmobile.app.service.DshEventService
 import org.json.JSONObject
@@ -214,6 +215,10 @@ fun HomeScreen(
             WebView.setWebContentsDebuggingEnabled(true)
         }
         WebView(context).apply {
+            addJavascriptInterface(
+                BlobDownloadBridge(context.applicationContext),
+                "AndroidDownloader",
+            )
             setBackgroundColor(if (darkTheme) 0xFF151517.toInt() else 0xFFF7F8FA.toInt())
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -304,6 +309,29 @@ fun HomeScreen(
             })
 
             setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                if (url.startsWith("blob:")) {
+                    val name = URLUtil.guessFileName(url, contentDisposition, mimeType)
+                    val script = """
+                        (function() {
+                          if (typeof window.__DSH_MOBILE_SAVE_BLOB__ !== 'function') return false;
+                          window.__DSH_MOBILE_SAVE_BLOB__(
+                            ${org.json.JSONObject.quote(url)},
+                            ${org.json.JSONObject.quote(name)}
+                          );
+                          return true;
+                        })();
+                    """.trimIndent()
+                    evaluateJavascript(script) { result ->
+                        if (result != "true") {
+                            Toast.makeText(
+                                context,
+                                "当前页面无法保存 blob 下载，请重新加载后再试",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                    return@setDownloadListener
+                }
                 runCatching {
                     val request = DownloadManager.Request(Uri.parse(url))
                     val cookie = CookieManager.getInstance().getCookie(url)

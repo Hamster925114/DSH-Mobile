@@ -151,7 +151,7 @@ Cookie 同时供 WebView 和 OkHttp 使用；设备令牌额外保存在 Android
 | M2 客户端皮肤 | `@dsh-mobile/client-ui`：全宽会话列、中栏固定到内容轨道（修复 0px 命中区）、折叠右栏隐藏、全屏 Sheet、移动留白、触控尺寸；抽屉展开 DSH 完整侧栏（图标带文字），右缘 `×` 关闭 |
 | M2 横屏 | 紧凑图标底栏、矮终端按键栏、旋转不重建 WebView |
 | M2 深链 | 通知携带 `session_id` / `dshmobile://session/<id>`；`singleTop` + `onNewIntent`；`client-ui` 暴露 `uiWorkspace.openSession` 桥 |
-| M2 文件/终端 | 底栏通过 `@dsh-mobile/client-ui` 的 `sidebarRight.openTab()` 桥直接打开文件/终端面板；全屏面板即使 `data-rightbar-collapsed` 也保持显示（用 `data-sidebar-right-open` 区分关闭的图标栏）；文件选择支持多选 + 拍照，选中文件先缓存到 `shared/` 再由 `FileProvider` 提供稳定 URI；下载完成通知含“打开/分享” |
+| M2 文件/终端 | 底栏通过 `@dsh-mobile/client-ui` 的 `sidebarRight.openTab()` 桥直接打开文件/终端面板；全屏面板即使 `data-rightbar-collapsed` 也保持显示（用 `data-sidebar-right-open` 区分关闭的图标栏）；文件选择支持多选 + 拍照，选中文件先缓存到 `shared/` 再由 `FileProvider` 提供稳定 URI；下载完成通知含“打开/分享”；DSH 生成的 `blob:` PDF/会话包通过分块桥保存到公共下载目录 |
 | M2 剪贴板 | 底栏“粘贴”把剪贴板图片转 JPEG/Base64，合成 `ClipboardEvent` 填入 DSH 输入框 |
 | M2 主题 | 系统亮/暗同步状态栏/导航栏图标、WebView 背景色；DSH 主题跟随系统 |
 | M3 设备令牌 | 配对签发独立 deviceToken（设备端 Android Keystore 加密）；`/mobile/token/exchange` 静默续期；`53986` 设备代理对 HTTP/WebSocket 做门禁 |

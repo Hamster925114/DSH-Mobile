@@ -239,6 +239,67 @@ window.__ModuleLoader__.load({
             closePanel = () => false
           }
         })
+        // DownloadManager cannot resolve blob: URLs. DSH generates PDFs and
+        // session archives in the page and clicks a download anchor; stream
+        // those bytes to the Android bridge in bounded chunks instead.
+        function bytesToBase64(bytes) {
+          let binary = ''
+          const step = 0x8000
+          for (let offset = 0; offset < bytes.length; offset += step) {
+            binary += String.fromCharCode.apply(
+              null,
+              bytes.subarray(offset, Math.min(offset + step, bytes.length))
+            )
+          }
+          return btoa(binary)
+        }
+
+        async function saveBlob(url, name) {
+          const bridge = window.AndroidDownloader
+          if (!bridge || typeof bridge.begin !== 'function') return false
+          const response = await fetch(url)
+          const blob = await response.blob()
+          const id = bridge.begin(name || 'download', blob.type || 'application/octet-stream')
+          if (!id) return false
+          try {
+            const chunkSize = 256 * 1024
+            for (let offset = 0; offset < blob.size; offset += chunkSize) {
+              const chunk = new Uint8Array(
+                await blob.slice(offset, offset + chunkSize).arrayBuffer()
+              )
+              if (!bridge.writeChunk(id, bytesToBase64(chunk))) {
+                bridge.abort(id)
+                return false
+              }
+            }
+            return bridge.finish(id) === true
+          } catch (error) {
+            bridge.abort(id)
+            return false
+          }
+        }
+
+        window.__DSH_MOBILE_SAVE_BLOB__ = (url, name) => {
+          if (!window.AndroidDownloader) return false
+          void saveBlob(url, name)
+          return true
+        }
+
+        const onBlobDownloadClick = (event) => {
+          if (!window.AndroidDownloader) return
+          const path = typeof event.composedPath === 'function' ? event.composedPath() : []
+          const anchor = path.find(
+            (element) => element instanceof HTMLAnchorElement &&
+              typeof element.href === 'string' &&
+              element.href.startsWith('blob:')
+          )
+          if (!anchor) return
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          void saveBlob(anchor.href, anchor.download || 'download')
+        }
+        document.addEventListener('click', onBlobDownloadClick, true)
+
         const query = window.matchMedia(
           '(max-width: 820px), (max-height: 500px) and (pointer: coarse)'
         )
@@ -333,6 +394,8 @@ window.__ModuleLoader__.load({
         if (typeof ctx?.effect === 'function') {
           ctx.effect(() => () => {
             try { query.removeEventListener('change', applyMarker) } catch {}
+            try { document.removeEventListener('click', onBlobDownloadClick, true) } catch {}
+            try { delete window.__DSH_MOBILE_SAVE_BLOB__ } catch {}
             try { handle.removeEventListener('click', onHandleClick) } catch {}
             try { backdrop.removeEventListener('click', onBackdropClick) } catch {}
             try { if (expandTimer !== null) clearTimeout(expandTimer) } catch {}
