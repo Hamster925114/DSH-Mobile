@@ -66,6 +66,7 @@ corepack pnpm test
 ## 文档
 
 - [PLAN.md](PLAN.md)：完整里程碑与验收
+- [docs/usage.md](docs/usage.md)：完整安装/配对/日常使用说明
 - [android/README.md](android/README.md)：配对、构建、排错
 - [docs/device-tokens.md](docs/device-tokens.md)：设备令牌/门禁/审计
 - [docs/download.md](docs/download.md)：安装包/校验/首次使用
