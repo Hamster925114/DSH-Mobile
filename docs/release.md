@@ -69,7 +69,29 @@ cd D:\project\DSH-Mobile\android
 [Convert]::ToBase64String([IO.File]::ReadAllBytes('D:\secure\dsh-mobile-release.jks'))
 ```
 
-## 6. 发布检查清单
+## 6. GitHub Release
+
+仓库：<https://github.com/Hamster925114/DSH-Mobile>
+
+打 tag 后，`.github/workflows/release.yml` 会：
+
+1. 构建 debug APK 和 unsigned release APK。
+2. 生成 `SHA256SUMS.txt`。
+3. 创建 **pre-release**，附上：
+   - `dsh-mobile-vX.Y.Z-debug.apk`（debug 签名，可直接安装，仅测试）
+   - `dsh-mobile-vX.Y.Z-unsigned.apk`（构建验证，不能直接安装）
+   - `SHA256SUMS.txt`
+
+```powershell
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+发布说明来自 [release-notes-0.2.0.md](release-notes-0.2.0.md)。
+
+> debug APK 不是生产签名。正式分发前必须按第 2–3 节生成生产密钥并构建 `app-release.apk`；生产 APK 可以手动补传到同一个 Release。
+
+## 7. 发布检查清单
 
 - [ ] 版本号/CHANGELOG 更新
 - [ ] Bridge 27 个测试通过
@@ -81,7 +103,7 @@ cd D:\project\DSH-Mobile\android
 - [ ] 隐私说明与已知限制随包/下载页发布
 - [ ] 备份签名密钥，记录证书指纹
 
-## 7. 当前未做
+## 8. 当前未做
 
 - R8/资源压缩（避免 Compose/ZXing 反射问题，后续单独验证）
 - 正式下载站/应用商店上架（当前提供 docs/download.md 与构建产物）

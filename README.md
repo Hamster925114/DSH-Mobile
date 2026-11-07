@@ -2,7 +2,11 @@
 
 Android 远程控制端：在手机上操作桌面版 DeepSeek Harness（DSH）的会话、工作区、模型、插件、文件预览、终端和审批。
 
-当前版本：**0.2.0（M4 发布准备）**。M1/M2/M3 功能已完成；M4 正在补 CI、签名、隐私说明和发布文档。
+当前版本：**0.2.0（M4 发布准备）**。M1/M2/M3 功能已完成；M4 已补 CI、release 构建、隐私说明和发布文档。
+
+- 仓库：<https://github.com/Hamster925114/DSH-Mobile>
+- 下载：<https://github.com/Hamster925114/DSH-Mobile/releases>
+- **详细使用说明：[docs/usage.md](docs/usage.md)**
 
 ## 方案
 
@@ -26,7 +30,7 @@ Android 远程控制端：在手机上操作桌面版 DeepSeek Harness（DSH）�
 
 ## 快速开始
 
-1. 桌面安装 bridge 和 client-ui，按 [docs/m0-setup.md](docs/m0-setup.md) / [docs/lan-setup.md](docs/lan-setup.md) 配置 Tailscale。
+1. 桌面安装 bridge 和 client-ui，按 [docs/usage.md](docs/usage.md) / [docs/lan-setup.md](docs/lan-setup.md) 配置 Tailscale。
 2. 固定 DSH 端口 `127.0.0.1:53985`，设备代理 `53986`：
 
 ```powershell
